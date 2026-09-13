@@ -40,8 +40,8 @@ const qboSchema = z.object({
   Credit: z.boolean().optional(),
   CurrencyRef: z.object({ value: z.string() }).optional(),
   EntityRef: z
-    .object({ value: z.string(), name: z.string().optional() })
-    .optional(),
+    .object({ value: z.string(), name: z.string().nullish() })
+    .nullish(),
   AccountRef: z.object({ value: z.string(), name: z.string().optional() }),
   PrivateNote: z.string().optional(),
   CustomField: z
@@ -59,10 +59,7 @@ export function mapQBO(raw: unknown): RecordItem | null {
       "Integration negative QBO TotalAmt is unsupported; use Credit flag for refunds",
     );
   const amount = Math.abs(cents(q.TotalAmt)) * (q.Credit ? -1 : 1);
-  if (!q.EntityRef?.name)
-    throw Error(
-      "Integration QBO vendor name missing; populate the vendor before reconciliation",
-    );
+  const vendor = q.EntityRef?.name?.trim();
   const reference =
     q.CustomField?.find((f) => /^(po|po number|purchase order)$/i.test(f.Name))
       ?.StringValue ||
@@ -71,7 +68,8 @@ export function mapQBO(raw: unknown): RecordItem | null {
   const mapped = recordSchema.parse({
     id: `QBO:${q.Id}`,
     source: "qbo",
-    vendor: q.EntityRef.name,
+    vendor: vendor || "Vendor not specified in QuickBooks",
+    ...(!vendor ? { vendorMissing: true } : {}),
     amount,
     date: q.TxnDate,
     reference,

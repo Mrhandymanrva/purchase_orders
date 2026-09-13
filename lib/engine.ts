@@ -7,7 +7,7 @@ import {
   type Result,
   type Decision,
 } from "./domain";
-export const ENGINE_VERSION = "1.0.0";
+export const ENGINE_VERSION = "1.0.1";
 export function normalize(v: string, rules: Rule[] = []): string {
   const clean = (s: string) =>
     s
@@ -123,12 +123,32 @@ export function reconcile(
     );
     ids.forEach((id) => consumed.add(id));
   }
+  // Missing vendor identity is a review exception, never evidence for a match or exemption.
+  for (const r of records.filter(
+    (r) => r.vendorMissing && !consumed.has(r.id),
+  )) {
+    output.push(
+      result(
+        r.source === "qbo" ? [r] : [],
+        r.source === "st" ? [r] : [],
+        "Missing vendor",
+        0,
+        [
+          "The source record has no vendor name. Automatic matching and No-PO exemptions are disabled.",
+          "Add the vendor in the source system and sync again, or record an explicit manual review.",
+        ],
+        r.amount < 0 ? ["Unallocated refund / credit"] : [],
+      ),
+    );
+    consumed.add(r.id);
+  }
   const duplicate = new Set<string>();
-  for (const q of charges) {
+  for (const q of charges.filter((r) => !r.vendorMissing)) {
     if (
       charges.some(
         (o) =>
           o.id !== q.id &&
+          !o.vendorMissing &&
           o.amount === q.amount &&
           o.date === q.date &&
           normalize(o.vendor, rules) === normalize(q.vendor, rules) &&

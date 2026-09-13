@@ -3,6 +3,7 @@ export const recordSchema = z.object({
   id: z.string().min(1),
   source: z.enum(["qbo", "st"]),
   vendor: z.string().min(1),
+  vendorMissing: z.boolean().optional(),
   amount: z.number().int().safe(),
   date: z
     .string()

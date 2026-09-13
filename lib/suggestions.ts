@@ -9,7 +9,7 @@ export function suggestRules(
   for (const r of results.filter((r) => r.status === "Missing PO"))
     for (const id of r.charges) {
       const q = state.records.find((q) => q.id === id)!;
-      if (q.amount <= 0) continue;
+      if (q.amount <= 0 || q.vendorMissing) continue;
       const key = normalize(q.vendor, state.rules);
       groups.set(key, [...(groups.get(key) || []), q]);
     }

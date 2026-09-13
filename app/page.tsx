@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { money, type State, type Result } from "@/lib/domain";
 import { seed } from "@/lib/seed";
-import { reconcile } from "@/lib/engine";
+import { reconcile, ENGINE_VERSION } from "@/lib/engine";
 import { cardUsers, ownershipLabel, filterResults } from "@/lib/report";
 import CardMappings from "./card-mappings";
 import TechnicianScorecard from "./scorecard";
@@ -503,7 +503,7 @@ export default function Page() {
                 </div>
                 <footer>
                   <span>Amounts in USD · Credit balances are negative</span>
-                  <span>Deterministic engine v1.0</span>
+                  <span>Deterministic engine v{ENGINE_VERSION}</span>
                 </footer>
               </section>
               <div className="bottom-note">
@@ -961,7 +961,12 @@ export default function Page() {
 function statusClass(s: string) {
   return ["Matched", "Confirmed", "No PO required"].includes(s)
     ? "success"
-    : ["Missing PO", "Amount mismatch", "Possible duplicate"].includes(s)
+    : [
+          "Missing vendor",
+          "Missing PO",
+          "Amount mismatch",
+          "Possible duplicate",
+        ].includes(s)
       ? "warning"
       : "neutral";
 }

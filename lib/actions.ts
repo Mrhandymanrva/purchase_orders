@@ -7,7 +7,7 @@ import {
   type RecordItem,
   type Directory,
 } from "./domain";
-import { fingerprint, reconcile, normalize } from "./engine";
+import { fingerprint, reconcile, normalize, ENGINE_VERSION } from "./engine";
 import { appendAudit } from "./store";
 import { suggestRules } from "./suggestions";
 import { applyOwnership } from "./ownership";
@@ -388,7 +388,7 @@ export function applyAction(
       invalidatedDecisions: invalidated,
       policy: state.config,
       ruleIds: state.rules.filter((r) => r.approved).map((r) => r.id),
-      engine: "1.0.0",
+      engine: ENGINE_VERSION,
       asOf,
       results: reconcile(
         state.records,
