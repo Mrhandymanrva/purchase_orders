@@ -1,0 +1,10 @@
+const assert=require('node:assert/strict');
+(async()=>{const base='http://127.0.0.1:3000';const get=async path=>{const r=await fetch(base+path);assert.equal(r.status,200);return r};let state=await (await get('/api/state')).json();assert.equal(state.mode,'demo');assert.ok(state.records.some(r=>r.cardUser==='Alex Morgan'));
+const post=body=>fetch(base+'/api/actions',{method:'POST',headers:{'Content-Type':'application/json',Origin:base},body:JSON.stringify(body)});
+let response=await fetch(base+'/api/actions',{method:'POST',headers:{Origin:'https://untrusted.example','Content-Type':'application/json'},body:'{}'});assert.equal(response.status,403);
+response=await post({type:'decision',revision:state.revision,resultId:'bad',action:'confirm',reason:'x'});assert.equal(response.status,400);
+const previous=state.revision;response=await post({type:'assign-card-user',revision:state.revision,chargeId:'Q-1056',cardUser:'Alex Morgan',reason:'Demo QA: individual card statement verified'});assert.equal(response.status,200);state=await response.json();assert.equal(state.revision,previous+1);assert.equal(state.audit.at(-1).action,'Card user assigned');
+response=await post({type:'sync',revision:previous});assert.equal(response.status,409);
+response=await post({type:'sync',revision:state.revision});assert.equal(response.status,200);state=await response.json();assert.equal(state.audit.at(-1).action,'Reconciliation run');assert.ok(state.lastSync);
+const csv=await(await get('/api/report?individual=Alex%20Morgan')).text();assert.ok(csv.includes('PO-2041'));assert.ok(csv.includes('Alex Morgan'));assert.ok(!csv.includes('Chris Parker'));
+const html=await(await get('/')).text();assert.ok(html.includes('Richmond'));await get('/api/health');console.log('HTTP smoke: page, state, health, ownership assignment, audit, resync, person CSV, validation, CSRF and stale-revision protection passed.');})().catch(e=>{console.error(e);process.exit(1)});

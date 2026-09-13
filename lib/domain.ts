@@ -1,0 +1,160 @@
+import { z } from "zod";
+export const recordSchema = z.object({
+  id: z.string().min(1),
+  source: z.enum(["qbo", "st"]),
+  vendor: z.string().min(1),
+  amount: z.number().int().safe(),
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .refine(
+      (v) =>
+        !Number.isNaN(Date.parse(v)) &&
+        new Date(v).toISOString().slice(0, 10) === v,
+    ),
+  reference: z.string().default(""),
+  currency: z.literal("USD").default("USD"),
+  description: z.string().default(""),
+  account: z.string().default(""),
+  accountId: z.string().optional(),
+  technicianId: z.string().optional(),
+  poTypeId: z.string().optional(),
+  inventoryLocationId: z.string().optional(),
+  createdAt: z.string().optional(),
+});
+export type RecordItem = z.infer<typeof recordSchema> & {
+  cardUser?: string;
+  ownershipSource?: string;
+  importedCardUser?: string;
+  importedOwnershipSource?: string;
+  cardPersonId?: string;
+};
+export const calendarDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine(
+    (v) =>
+      !Number.isNaN(Date.parse(v)) &&
+      new Date(v).toISOString().slice(0, 10) === v,
+    "Use a valid date",
+  );
+export const cardMappingSchema = z
+  .object({
+    id: z.string().optional(),
+    accountId: z.string().trim().min(1).max(100),
+    accountName: z.string().trim().max(150).optional(),
+    cardUser: z.string().trim().min(2).max(100),
+    personId: z.string().trim().min(1).max(100).optional(),
+    from: calendarDate,
+    through: calendarDate.optional(),
+    reason: z.string().trim().min(5).max(500),
+  })
+  .refine(
+    (m) => !m.through || m.from <= m.through,
+    "End date must be on or after start date",
+  );
+export type CardMapping = z.infer<typeof cardMappingSchema> & { id: string };
+export const configSchema = z.object({
+  windowDays: z.number().int().min(1).max(90),
+  graceDays: z.number().int().min(0).max(30),
+  lateDays: z.number().int().min(0).max(30),
+  toleranceCents: z.number().int().min(0).max(1000),
+  autoThreshold: z.number().min(70).max(100),
+  ambiguityMargin: z.number().min(0).max(30),
+  maxGroup: z.number().int().min(2).max(4),
+  weights: z
+    .object({
+      vendor: z.number().min(0),
+      amount: z.number().min(0),
+      date: z.number().min(0),
+      reference: z.number().min(0),
+    })
+    .refine(
+      (v) => Object.values(v).reduce((a, b) => a + b, 0) === 100,
+      "Weights must total 100",
+    ),
+});
+export type Config = z.infer<typeof configSchema>;
+export const defaults: Config = {
+  windowDays: 21,
+  graceDays: 5,
+  lateDays: 2,
+  toleranceCents: 1,
+  autoThreshold: 85,
+  ambiguityMargin: 5,
+  maxGroup: 3,
+  weights: { vendor: 30, amount: 45, date: 15, reference: 10 },
+};
+export type Rule = {
+  id: string;
+  type: "alias" | "no-po";
+  pattern: string;
+  target: string;
+  maxCents: number;
+  approved: boolean;
+  description: string;
+};
+export type Result = {
+  id: string;
+  status: string;
+  charges: string[];
+  pos: string[];
+  vendor: string;
+  amount: number;
+  difference: number;
+  date: string;
+  score: number;
+  reasons: string[];
+  flags: string[];
+  kind: string;
+};
+export type Decision = {
+  resultId: string;
+  fingerprint: string;
+  action: "confirm" | "dismiss";
+  reason: string;
+  actor: string;
+  at: string;
+  charges: string[];
+  pos: string[];
+};
+export type Audit = {
+  id: string;
+  at: string;
+  actor: string;
+  action: string;
+  detail: unknown;
+  previousHash: string;
+  hash: string;
+};
+export type State = {
+  revision: number;
+  records: RecordItem[];
+  config: Config;
+  rules: Rule[];
+  decisions: Decision[];
+  audit: Audit[];
+  lastSync: string | null;
+  mode: "demo" | "live";
+  cardAssignments?: Record<string, string>;
+  cardMappings?: CardMapping[];
+  directory?: Directory;
+  vanStockTypeIds?: string[];
+  coverage?: { chargesFrom: string; posFrom: string; through: string };
+};
+export type Directory = {
+  accounts: { id: string; name: string; active: boolean; parentId?: string }[];
+  people: {
+    id: string;
+    sourceId: string;
+    name: string;
+    kind: "technician" | "employee";
+    active: boolean;
+  }[];
+  poTypes: { id: string; name: string; active: boolean }[];
+  syncedAt: string;
+};
+export const money = (n: number) =>
+  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
+    n / 100,
+  );
