@@ -2,7 +2,7 @@
 
 Next.js / React + Node / TypeScript + PostgreSQL MVP for posted QuickBooks credit-card purchases versus ServiceTitan purchase orders. Includes an interactive seeded Richmond workspace, deterministic matching, explicit human review, individual card-user reporting, and Railway deployment files.
 
-**Live readiness:** local validation does not validate your tenant's API permissions, PO total semantics, identity fields, or accounting data. Complete the go-live checklist below before relying on live results. No live credentials are included and no cloud deployment has been performed.
+**Live readiness:** deployment validation does not validate your tenant's API permissions, PO total semantics, identity fields, or accounting data. Complete the go-live checklist below before relying on live results. No live credentials are included. See `VALIDATION.md` for completed local and Railway checks.
 
 ## Run the sample workspace
 
@@ -157,12 +157,20 @@ On sync, repeated missing-PO purchases on at least three distinct dates can gene
 
 1. Put this app directory at the repository root, or select it as the Railway service root. Add a PostgreSQL service in the same project.
 2. Configure `DATABASE_URL` as a reference to the PostgreSQL service. Set `DEMO_MODE=false`, `APP_USER`, a strong `APP_PASSWORD`, `APP_ORIGIN`, and the integration variables above. Keep secrets in Railway Variables, not build arguments.
-3. Railway detects `Dockerfile`; `railway.json` runs `node scripts/migrate.cjs` as a pre-deploy command. The migration is idempotent and never seeds production. For separated database roles, run the migration under a controlled owner job and give the web service restricted runtime credentials.
+3. Railway detects `Dockerfile`. In the app service's deployment settings, set **Pre-deploy Command** to `node scripts/migrate.cjs`, **Pre-deploy Timeout** to `180` seconds, **Healthcheck Path** to `/api/health`, and **Healthcheck Timeout** to `120` seconds. The migration is idempotent and never seeds production. For separated database roles, run the migration under a controlled owner job and give the web service restricted runtime credentials.
 4. Generate a Railway HTTPS domain and set `APP_ORIGIN` to that exact origin. The runtime listens on injected `PORT`. Health checks use `/api/health` and verify database/schema and authentication configuration.
 5. Deploy, inspect logs, authenticate, and perform sandbox validation before setting source environments to production. Empty live data is expected until a successful sync.
 6. Enable PostgreSQL backups and test a restore including OAuth ciphertext and its separately protected encryption key. Keep the previous deployment available for rollback; do not reverse audit migrations by deleting history.
 
-[Railway Next.js deployment guide](https://docs.railway.com/guides/nextjs).
+The same service settings can be applied with the authenticated Railway CLI, using the actual app service and environment IDs:
+
+```sh
+railway api --file scripts/configure-railway.graphql --raw-var serviceId=SERVICE_ID --raw-var environmentId=ENVIRONMENT_ID
+```
+
+Then deploy the app from its GitHub source. Inspect the resulting deployment to confirm that the pre-deploy migration ran and the health check passed. A running container alone does not prove database readiness.
+
+Railway no longer allows new services to opt into legacy `railway.json` / `railway.toml` configuration. This repository uses the Dockerfile plus explicit service settings; it does not rely on that deprecated mechanism. [Railway configuration migration](https://docs.railway.com/infrastructure-as-code#migrating-from-config-as-code), [pre-deploy commands](https://docs.railway.com/deployments/pre-deploy-command).
 
 ## Go-live validation
 

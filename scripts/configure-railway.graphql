@@ -1,0 +1,14 @@
+# Apply to the existing app service after setting its Railway Variables.
+# This does not create services, change variables, or modify the database.
+mutation ConfigurePurchaseOrders($serviceId: String!, $environmentId: String!) {
+  serviceInstanceUpdate(
+    serviceId: $serviceId
+    environmentId: $environmentId
+    input: {
+      preDeployCommand: ["node scripts/migrate.cjs"]
+      preDeployTimeoutSeconds: 180
+      healthcheckPath: "/api/health"
+      healthcheckTimeout: 120
+    }
+  )
+}
