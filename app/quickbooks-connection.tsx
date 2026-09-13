@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { State } from "@/lib/domain";
 import { cardDescendants } from "@/lib/quickbooks-accounts";
 
@@ -17,6 +17,10 @@ export default function QuickBooksConnection({
     [selected, setSelected] = useState<string[]>(qbo?.accountIds || []),
     [reason, setReason] = useState("");
   const [redirect, setRedirect] = useState("");
+  const [saveAttempted, setSaveAttempted] = useState(false);
+  const reasonInput = useRef<HTMLInputElement>(null);
+  const reasonError = saveAttempted && reason.trim().length < 5;
+  const cardsError = saveAttempted && selected.length === 0;
   useEffect(() => {
     setRedirect(
       window.location.origin + "/api/integrations/quickbooks/callback",
@@ -30,6 +34,15 @@ export default function QuickBooksConnection({
   const parents = (qbo?.accounts || []).filter(
     (a) => a.active && cardDescendants(qbo?.accounts || [], a.id).length > 0,
   );
+  function saveSelection(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (busy) return;
+    setSaveAttempted(true);
+    setMessage("");
+    if (reason.trim().length < 5) reasonInput.current?.focus();
+    if (!selected.length || reason.trim().length < 5) return;
+    void accounts("save");
+  }
   async function connect() {
     setBusy(true);
     setMessage("");
@@ -59,7 +72,11 @@ export default function QuickBooksConnection({
           action,
           revision: state.revision,
           ...(action === "save"
-            ? { parentAccountId: parent, accountIds: selected, reason }
+            ? {
+                parentAccountId: parent,
+                accountIds: selected,
+                reason: reason.trim(),
+              }
             : {}),
         }),
       });
@@ -67,6 +84,7 @@ export default function QuickBooksConnection({
       if (!response.ok)
         throw Error(data.error || "Could not update card selection");
       onChanged(data);
+      setSaveAttempted(false);
       setReason("");
       setMessage(
         action === "discover"
@@ -109,7 +127,7 @@ export default function QuickBooksConnection({
           company.
         </p>
       )}
-      <p role="status">{busy ? "Working…" : message}</p>
+      {!qbo?.discoveredAt && <p role="status">{busy ? "Working…" : message}</p>}
       <details>
         <summary>One-time Intuit app setup</summary>
         <p>
@@ -124,7 +142,7 @@ export default function QuickBooksConnection({
         </p>
       </details>
       {qbo?.discoveredAt && (
-        <div className="qbo-card-picker">
+        <form className="qbo-card-picker" onSubmit={saveSelection} noValidate>
           <h3>Choose purchases to import</h3>
           <label className="field">
             Main credit-card account
@@ -135,6 +153,7 @@ export default function QuickBooksConnection({
               onChange={(e) => {
                 setParent(e.target.value);
                 setSelected([]);
+                setSaveAttempted(false);
               }}
             >
               <option value="">Choose an account</option>
@@ -156,6 +175,7 @@ export default function QuickBooksConnection({
               <div className="qbo-picker-heading">
                 <strong>{selected.length} cards selected</strong>
                 <button
+                  type="button"
                   disabled={busy}
                   onClick={() =>
                     setSelected(cards.filter((a) => a.active).map((a) => a.id))
@@ -163,7 +183,11 @@ export default function QuickBooksConnection({
                 >
                   Select all active cards
                 </button>
-                <button disabled={busy} onClick={() => setSelected([])}>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setSelected([])}
+                >
                   Clear selection
                 </button>
               </div>
@@ -190,21 +214,42 @@ export default function QuickBooksConnection({
                   </label>
                 ))}
               </div>
+              {cardsError && (
+                <p className="field-error" role="alert">
+                  Select at least one active card to save this selection.
+                </p>
+              )}
               <label className="field">
-                Reason for this selection
+                Reason for this selection (required)
                 <input
+                  ref={reasonInput}
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
-                  placeholder="Richmond employee cards for purchase reconciliation"
+                  placeholder="e.g. Initial Richmond card setup"
+                  required
+                  minLength={5}
                   maxLength={500}
                   disabled={busy}
+                  aria-invalid={reasonError || undefined}
+                  aria-describedby={
+                    reasonError
+                      ? "qbo-reason-help qbo-reason-error"
+                      : "qbo-reason-help"
+                  }
                 />
               </label>
-              <button
-                onClick={() => accounts("save")}
-                disabled={busy || !selected.length || reason.trim().length < 5}
-              >
-                Save card selection
+              <p id="qbo-reason-help">
+                Enter at least 5 characters explaining this selection. Your
+                reason is saved in the audit log.
+              </p>
+              {reasonError && (
+                <p id="qbo-reason-error" className="field-error" role="alert">
+                  Enter a reason of at least 5 characters, such as “Initial
+                  Richmond card setup”.
+                </p>
+              )}
+              <button type="submit" disabled={busy}>
+                {busy ? "Working…" : "Save card selection"}
               </button>
               <p>
                 Only checked child accounts are imported. New cards must be
@@ -213,7 +258,8 @@ export default function QuickBooksConnection({
               </p>
             </>
           )}
-        </div>
+          <p role="status">{busy ? "Working…" : message}</p>
+        </form>
       )}
     </section>
   );
