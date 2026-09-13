@@ -106,7 +106,7 @@ const stSchema = z.object({
   createdOn: z.string(),
   total: decimal,
   status: z.string(),
-  businessUnitId: sourceId.optional(),
+  businessUnitId: sourceId.nullish(),
   summary: z.string().nullish(),
   technicianId: sourceId.nullish(),
   typeId: sourceId.nullish(),

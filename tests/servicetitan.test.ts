@@ -248,7 +248,7 @@ test("PO adapter imports only the explicitly selected business units", async () 
             hasMore: false,
           });
         return Response.json({
-          data: ["r", "h"].map((businessUnitId, index) => ({
+          data: ["r", "h", null, undefined].map((businessUnitId, index) => ({
             id: index + 1,
             vendorId: 1,
             number: "PO-" + index,
