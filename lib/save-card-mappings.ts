@@ -5,8 +5,8 @@ import { applyOwnership } from "./ownership";
 import { fingerprint } from "./engine";
 import { appendAudit } from "./store";
 
-// Validate the final roster before mutating state, so closing a period and adding
-// its replacement works in either order and a bad row cannot partially save.
+// One permanent employee per card. Corrections affect all of that card's
+// purchases. Validate the complete roster before mutating any records.
 export function saveCardMappings(
   state: State,
   inputs: unknown[],
@@ -18,13 +18,19 @@ export function saveCardMappings(
   const parent =
     state.quickbooks?.parentAccountId || process.env.QBO_PARENT_CC_ACCOUNT_ID;
   const seen = new Set<string>();
+  const seenAccounts = new Set<string>();
   const changes = inputs.map((input) => {
     const data = cardMappingSchema.parse(input);
-    const before = data.id ? existing.find((m) => m.id === data.id) : undefined;
+    const before = data.id
+      ? existing.find((m) => m.id === data.id)
+      : existing.find((m) => m.accountId === data.accountId);
     if (data.id && !before) throw Error("Subaccount mapping no longer exists");
-    if (data.id && seen.has(data.id))
-      throw Error("The same assignment was submitted more than once.");
-    if (data.id) seen.add(data.id);
+    if (seenAccounts.has(data.accountId) || (before && seen.has(before.id)))
+      throw Error(
+        "The same card was submitted more than once. Use one employee per card.",
+      );
+    seenAccounts.add(data.accountId);
+    if (before) seen.add(before.id);
     if (parent && data.accountId === parent)
       throw Error(
         "The parent credit-card account cannot be assigned to one person",
@@ -38,7 +44,7 @@ export function saveCardMappings(
       reason:
         data.reason || before?.reason || "Saved from card assignment grid",
       accountName: account.name || data.accountName || before?.accountName,
-      id: data.id || randomUUID(),
+      id: before?.id || randomUUID(),
     };
     return { before: before || null, after };
   });
@@ -46,21 +52,10 @@ export function saveCardMappings(
     ...existing.filter((m) => !seen.has(m.id)),
     ...changes.map((c) => c.after),
   ];
-  const sorted = [...next].sort(
-    (a, b) =>
-      a.accountId.localeCompare(b.accountId) || a.from.localeCompare(b.from),
-  );
-  for (let i = 1; i < sorted.length; i++) {
-    const previous = sorted[i - 1],
-      current = sorted[i];
-    if (
-      previous.accountId === current.accountId &&
-      current.from <= (previous.through || "9999-12-31")
-    )
-      throw Error(
-        `Subaccount ${current.accountName || current.accountId} already has a mapping during those dates. End the earlier assignment before the next starts. No rows were saved.`,
-      );
-  }
+  if (new Set(next.map((m) => m.accountId)).size !== next.length)
+    throw Error(
+      "A card already has a mapping. Edit that card's existing row. No rows were saved.",
+    );
   const records = applyOwnership(state.records, {
     ...state,
     cardMappings: next,
@@ -85,6 +80,8 @@ export function saveCardMappings(
     actor,
     bulk ? "Card subaccount mappings saved" : "Card subaccount mapping saved",
     {
+      scope:
+        "All purchases for each card, regardless of purchase date or card closure",
       ...(bulk ? { changes, count: changes.length } : changes[0]),
       affectedChargeIds,
       invalidatedDecisionIds,

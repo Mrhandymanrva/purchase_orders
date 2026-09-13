@@ -437,7 +437,6 @@ test("card discovery works without ST credentials and scoped selection is audite
             mapping: {
               accountId: "main",
               cardUser: "Test User",
-              from: "2026-09-01",
               reason: "test mapping",
             },
           },

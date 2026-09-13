@@ -62,7 +62,7 @@ export default function CardMappingUpload({
       if (!res.ok) throw Error(data.error || "Import failed");
       onImported(data);
       setMessage(
-        `Import saved: ${preview.counts.new} new, ${preview.counts.updated} updated, ${preview.counts.unchanged} unchanged, ${preview.counts.closed} earlier assignments ended.`,
+        `Import saved: ${preview.counts.new} new, ${preview.counts.updated} updated, ${preview.counts.unchanged} unchanged.`,
       );
       setPreview(null);
     } catch (e) {
@@ -131,10 +131,9 @@ export default function CardMappingUpload({
         </button>
       </div>
       <p className="muted">
-        Reuploads update existing assignments. Omitted cards stay mapped. A
-        later start date creates a new assignment and ends the previous open
-        period. For precise edits, export the current mappings and retain their
-        Mapping IDs.
+        Use one row per card. Reuploads update that card's employee mapping for
+        its full purchase history. Omitted and closed cards stay mapped. Dates
+        are not required; date columns in older templates are ignored.
       </p>
       {message && (
         <p role="status" className="notice">
@@ -153,9 +152,6 @@ export default function CardMappingUpload({
             </span>
             <span>
               <strong>{preview.counts.unchanged}</strong> unchanged
-            </span>
-            <span>
-              <strong>{preview.counts.closed}</strong> earlier assignments ended
             </span>
           </div>
           {preview.errors.length > 0 && (
@@ -212,9 +208,6 @@ export default function CardMappingUpload({
                             {c.before.accountName || c.before.accountId}
                           </small>
                           <small className="block">
-                            {c.before.from} – {c.before.through || "ongoing"}
-                          </small>
-                          <small className="block">
                             Reason: {c.before.reason}
                           </small>
                         </>
@@ -226,9 +219,6 @@ export default function CardMappingUpload({
                       {c.after.cardUser}
                       <small className="block">
                         {c.after.accountName || c.after.accountId}
-                      </small>
-                      <small className="block">
-                        {c.after.from} – {c.after.through || "ongoing"}
                       </small>
                       <small className="block">Reason: {c.after.reason}</small>
                     </td>

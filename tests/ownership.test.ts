@@ -6,6 +6,7 @@ import { reconcile } from "../lib/engine";
 import { verifyAudit } from "../lib/store";
 import { mapQBO, readQBO } from "../lib/integrations";
 import { reportCSV } from "../lib/report";
+import { applyOwnership } from "../lib/ownership";
 const mapping = (overrides: Record<string, unknown> = {}) =>
   actionSchema.parse({
     type: "save-card-mapping",
@@ -13,11 +14,33 @@ const mapping = (overrides: Record<string, unknown> = {}) =>
     mapping: {
       accountId: "demo-81",
       cardUser: "Jordan Smith",
-      from: "2026-09-01",
       reason: "Verified employee card subaccount roster",
       ...overrides,
     },
   });
+
+test("legacy duplicate mappings cannot silently choose an owner", () => {
+  const s = seed();
+  const legacy = {
+    id: "old-1",
+    accountId: "demo-81",
+    cardUser: "Alex Morgan",
+    reason: "Legacy import",
+    from: "2020-01-01",
+    through: "2025-12-31",
+  };
+  s.cardMappings = [
+    legacy,
+    {
+      ...legacy,
+      id: "old-2",
+      cardUser: "Chris Parker",
+      from: "2026-01-01",
+      through: undefined,
+    },
+  ];
+  assert.throws(() => applyOwnership(s.records, s), /Multiple mappings/);
+});
 test("subaccount mapping covers its charges and linked POs, without touching other children", () => {
   const s = seed();
   applyAction(s, mapping(), "operator");
@@ -37,51 +60,77 @@ test("subaccount mapping covers its charges and linked POs, without touching oth
   assert.ok(!csv.includes("demo-82"));
   assert.ok(verifyAudit(s.audit));
 });
-test("effective dates and card reassignments preserve prior users", () => {
+test("permanent mappings cover historical purchases, future purchases and refunds without dates", () => {
   const s = seed();
-  applyAction(s, mapping({ through: "2026-09-09" }), "operator");
+  const original = s.records.find((r) => r.accountId === "demo-81")!;
+  s.records.push(
+    { ...original, id: "old", date: "2020-01-01" },
+    { ...original, id: "future-refund", date: "2030-01-01", amount: -100 },
+  );
   applyAction(
     s,
-    mapping({ from: "2026-09-10", cardUser: "Alex Morgan" }),
+    mapping({ from: "2026-09-13", through: "2026-09-14" }),
     "operator",
   );
-  assert.equal(
-    s.records.find((r) => r.id === "Q-1043")?.cardUser,
-    "Jordan Smith",
+  assert.ok(
+    s.records
+      .filter((r) => r.accountId === "demo-81")
+      .every((r) => r.cardUser === "Jordan Smith"),
   );
-  assert.equal(
-    s.records.find((r) => r.id === "Q-1041")?.cardUser,
-    "Alex Morgan",
+  assert.equal(s.cardMappings![0].from, undefined);
+  assert.equal(s.cardMappings![0].through, undefined);
+  const id = s.cardMappings![0].id;
+  applyAction(s, mapping({ cardUser: "Alex Morgan" }), "operator");
+  assert.equal(s.cardMappings!.length, 1);
+  assert.equal(s.cardMappings![0].id, id);
+  assert.ok(
+    s.records
+      .filter((r) => r.accountId === "demo-81")
+      .every((r) => r.cardUser === "Alex Morgan"),
   );
-  assert.throws(
-    () =>
-      applyAction(
-        s,
-        mapping({ from: "2026-09-09", through: "2026-09-09" }),
-        "operator",
-      ),
-    /already has a mapping/,
-  );
-});
-test("mapping date corrections restore imported ownership outside the period", () => {
-  const s = seed();
-  applyAction(s, mapping(), "operator");
-  applyAction(
-    s,
-    mapping({ id: s.cardMappings![0].id, from: "2026-09-10" }),
-    "operator",
-  );
-  assert.equal(
-    s.records.find((r) => r.id === "Q-1043")?.cardUser,
-    "Alex Morgan",
-  );
-  assert.equal(
-    s.records.find((r) => r.id === "Q-1041")?.cardUser,
-    "Jordan Smith",
-  );
-  assert.equal((s.audit[0].detail as any).after.from, "2026-09-01");
   assert.ok(verifyAudit(s.audit));
 });
+
+test("closed cards and inactive employees retain historical identity after refresh and sync", () => {
+  const s = seed();
+  applyAction(
+    s,
+    mapping({ cardUser: "Alex Morgan", personId: "technician:demo-1" }),
+    "operator",
+  );
+  const directory = structuredClone(s.directory!);
+  directory.people = directory.people.filter(
+    (p) => p.id !== "technician:demo-1",
+  );
+  directory.accounts.find((a) => a.id === "demo-81")!.active = false;
+  applyAction(
+    s,
+    { type: "refresh-directory", revision: 1 },
+    "operator",
+    undefined,
+    directory,
+  );
+  s.mode = "live";
+  applyAction(
+    s,
+    { type: "sync", revision: 1 },
+    "operator",
+    seed().records,
+    directory,
+  );
+  assert.equal(s.cardMappings!.length, 1);
+  assert.ok(
+    s.records
+      .filter((r) => r.accountId === "demo-81")
+      .every((r) => r.cardPersonId === "technician:demo-1"),
+  );
+  assert.equal(
+    s.records.find((r) => r.accountId === "demo-82")!.cardUser,
+    "Chris Parker",
+  );
+  assert.ok(verifyAudit(s.audit));
+});
+
 test("individual overrides take precedence and subaccount mappings survive sync", () => {
   const s = seed();
   applyAction(
@@ -107,14 +156,12 @@ test("individual overrides take precedence and subaccount mappings survive sync"
     "Jordan Smith",
   );
 });
-test("parent, unknown subaccounts, missing edits and invalid dates fail closed", () => {
+test("parent, unknown subaccounts and missing edits fail closed", () => {
   const s = seed();
   assert.throws(() =>
     applyAction(s, mapping({ accountId: "unknown" }), "operator"),
   );
   assert.throws(() => applyAction(s, mapping({ id: "missing" }), "operator"));
-  assert.throws(() => mapping({ from: "2026-02-30" }));
-  assert.throws(() => mapping({ from: "2026-09-10", through: "2026-09-01" }));
   const before = process.env.QBO_PARENT_CC_ACCOUNT_ID;
   process.env.QBO_PARENT_CC_ACCOUNT_ID = "demo-81";
   try {

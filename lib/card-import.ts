@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { calendarDate, type CardMapping, type State } from "./domain";
+import { type CardMapping, type State } from "./domain";
 import { resolvePerson } from "./directory";
 export const importRowSchema = z.object({
   row: z.number().int().positive(),
@@ -8,8 +8,9 @@ export const importRowSchema = z.object({
   accountId: z.string().trim().max(100).optional(),
   accountName: z.string().trim().max(150).optional(),
   cardUser: z.string().trim().min(2).max(100),
-  from: calendarDate,
-  through: calendarDate.optional(),
+  // Accept old template columns for compatibility; dates have no effect.
+  from: z.string().optional(),
+  through: z.string().optional(),
   reason: z.string().trim().min(5).max(500).optional(),
 });
 export type ImportRow = z.infer<typeof importRowSchema>;
@@ -42,8 +43,6 @@ export function knownAccounts(
   return accounts;
 }
 const blank = (v: string | undefined) => v?.trim() || undefined;
-const previousDay = (v: string) =>
-  new Date(Date.parse(v) - 86400000).toISOString().slice(0, 10);
 export function planMappingImport(
   state: State,
   input: ImportRow[],
@@ -55,6 +54,12 @@ export function planMappingImport(
     counts = { new: 0, updated: 0, unchanged: 0, closed: 0 };
   const existing = state.cardMappings || [],
     accounts = knownAccounts(state);
+  if (new Set(existing.map((m) => m.accountId)).size !== existing.length)
+    errors.push({
+      row: 0,
+      message:
+        "Existing mappings contain duplicate cards. Resolve them before importing.",
+    });
   const plan: CardMapping[] = existing.map((m) => ({ ...m }));
   const seen = new Set<string>(),
     touched = new Map<string, number>();
@@ -129,26 +134,16 @@ export function planMappingImport(
       });
       continue;
     }
-    const old =
-      oldById ||
-      existing.find((m) => m.accountId === accountId && m.from === row.from);
-    const key = old?.id || `${accountId}\u0000${row.from}`;
+    const old = oldById || existing.find((m) => m.accountId === accountId);
+    const key = accountId;
     if (seen.has(key)) {
       errors.push({
         row: row.row,
-        message:
-          "Duplicate assignment in this file: use one row per subaccount and start date.",
+        message: "Duplicate card in this file: use one row per subaccount.",
       });
       continue;
     }
     seen.add(key);
-    if (row.through && row.through < row.from) {
-      errors.push({
-        row: row.row,
-        message: "Effective through must be on or after Effective from.",
-      });
-      continue;
-    }
     resolved.push({ row, accountId, old });
   }
   for (const { row, accountId, old } of resolved) {
@@ -163,7 +158,7 @@ export function planMappingImport(
       continue;
     }
     const candidate: CardMapping = {
-      id: old?.id || `import:${JSON.stringify([accountId, row.from])}`,
+      id: old?.id || `import:${JSON.stringify(accountId)}`,
       accountId,
       accountName:
         blank(row.accountName) ||
@@ -171,18 +166,8 @@ export function planMappingImport(
         [...(accounts.get(accountId) || [])][0] ||
         undefined,
       ...person,
-      from: row.from,
-      through: row.through || old?.through,
       reason: blank(row.reason) || old?.reason || uploadReason,
     };
-    if (candidate.through && candidate.through < candidate.from) {
-      errors.push({
-        row: row.row,
-        message:
-          "Start date falls after the existing end date. Supply a valid end date or edit the assignment manually.",
-      });
-      continue;
-    }
     if (old)
       plan.splice(
         plan.findIndex((m) => m.id === old.id),
@@ -192,36 +177,11 @@ export function planMappingImport(
     else plan.push(candidate);
     touched.set(candidate.id, row.row);
   }
-  // End an open prior period when a new later period is introduced. Closed ranges never get silently shortened.
-  for (const accountId of new Set(plan.map((m) => m.accountId))) {
-    const group = plan
-      .filter((m) => m.accountId === accountId)
-      .sort((a, b) => a.from.localeCompare(b.from));
-    for (let i = 0; i < group.length - 1; i++) {
-      const prior = group[i],
-        next = group[i + 1];
-      if (
-        !prior.through &&
-        prior.from < next.from &&
-        (touched.has(prior.id) || touched.has(next.id))
-      ) {
-        prior.through = previousDay(next.from);
-      }
-      if ((prior.through || "9999-12-31") >= next.from) {
-        errors.push({
-          row: touched.get(next.id) || touched.get(prior.id) || 0,
-          message: `Assignments overlap for subaccount ${accountId}. Correct their effective dates.`,
-        });
-      }
-    }
-  }
   const equal = (a: CardMapping, b: CardMapping) =>
     a.accountId === b.accountId &&
     (a.accountName || "") === (b.accountName || "") &&
     a.cardUser === b.cardUser &&
     (a.personId || "") === (b.personId || "") &&
-    a.from === b.from &&
-    (a.through || "") === (b.through || "") &&
     a.reason === b.reason;
   for (const after of plan) {
     const before = existing.find((m) => m.id === after.id) || null;

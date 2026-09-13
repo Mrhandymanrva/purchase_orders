@@ -8,6 +8,7 @@ function key() {
   );
 }
 const schema = z.object({
+  policy: z.literal("card-lifetime-v1"),
   revision: z.number().int(),
   expires: z.number(),
   filename: z.string().max(200),
@@ -33,9 +34,12 @@ export function readImportReceipt(token: string) {
     throw Error(
       "Import preview was changed or expired after a restart. Preview the file again.",
     );
-  const receipt = schema.parse(
-    JSON.parse(Buffer.from(body, "base64url").toString("utf8")),
-  );
+  const raw = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+  if (raw.policy !== "card-lifetime-v1")
+    throw Error(
+      "The mapping workflow changed. Preview the spreadsheet again before applying it.",
+    );
+  const receipt = schema.parse(raw);
   if (receipt.expires < Date.now())
     throw Error("Import preview expired. Preview the file again.");
   return receipt;

@@ -57,6 +57,7 @@ export async function POST(req: Request) {
       state.quickbooks?.parentAccountId || process.env.QBO_PARENT_CC_ACCOUNT_ID,
     );
     const receipt = {
+      policy: "card-lifetime-v1" as const,
       revision: state.revision,
       expires: Date.now() + 15 * 60 * 1000,
       filename,

@@ -45,7 +45,6 @@ test("PostgreSQL migration, transactional override, reload, immutable hash audit
         mapping: {
           accountId: "demo-81",
           cardUser: "Jordan Smith",
-          from: "2026-09-01",
           reason: "Verified test subaccount roster",
         },
       },

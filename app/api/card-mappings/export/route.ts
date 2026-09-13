@@ -13,8 +13,6 @@ export async function GET(req: Request) {
         "Subaccount ID",
         "Subaccount name",
         "Card user",
-        "Effective from",
-        "Effective through",
         "Reason",
         "ST Person ID",
       ],
@@ -25,8 +23,6 @@ export async function GET(req: Request) {
           s.records.find((r) => r.accountId === m.accountId)?.account ||
           "",
         m.cardUser,
-        m.from,
-        m.through || "",
         m.reason,
         m.personId || "",
       ]),

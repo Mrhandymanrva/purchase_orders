@@ -154,12 +154,9 @@ export async function parseMappingFile(
     throw Error("Duplicate mapping column headers.");
   if (
     !used.includes("cardUser") ||
-    !used.includes("from") ||
     !used.some((k) => ["id", "accountId", "accountName"].includes(k))
   )
-    throw Error(
-      "Required columns: Subaccount ID (or name), Card user, Effective from.",
-    );
+    throw Error("Required columns: Subaccount ID (or name), Card user.");
   const rows: ImportRow[] = [];
   for (let i = 1; i < grid.length; i++) {
     const values = grid[i].map((v) => String(v ?? "").trim());

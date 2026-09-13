@@ -40,22 +40,21 @@ export const calendarDate = z
       new Date(v).toISOString().slice(0, 10) === v,
     "Use a valid date",
   );
-export const cardMappingSchema = z
-  .object({
-    id: z.string().optional(),
-    accountId: z.string().trim().min(1).max(100),
-    accountName: z.string().trim().max(150).optional(),
-    cardUser: z.string().trim().min(2).max(100),
-    personId: z.string().trim().min(1).max(100).optional(),
-    from: calendarDate,
-    through: calendarDate.optional(),
-    reason: z.string().trim().max(500).default(""),
-  })
-  .refine(
-    (m) => !m.through || m.from <= m.through,
-    "End date must be on or after start date",
-  );
-export type CardMapping = z.infer<typeof cardMappingSchema> & { id: string };
+export const cardMappingSchema = z.object({
+  id: z.string().optional(),
+  accountId: z.string().trim().min(1).max(100),
+  accountName: z.string().trim().max(150).optional(),
+  cardUser: z.string().trim().min(2).max(100),
+  personId: z.string().trim().min(1).max(100).optional(),
+  reason: z.string().trim().max(500).default(""),
+});
+// Legacy dates may remain in old snapshots/audits, but never limit ownership.
+// New saves strip these fields and store one permanent mapping per card.
+export type CardMapping = z.infer<typeof cardMappingSchema> & {
+  id: string;
+  from?: string;
+  through?: string;
+};
 export const configSchema = z.object({
   windowDays: z.number().int().min(1).max(90),
   graceDays: z.number().int().min(0).max(30),

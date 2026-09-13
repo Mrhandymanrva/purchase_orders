@@ -1011,7 +1011,7 @@ footer,
   margin-top: 24px;
 }
 .mapping-grid table {
-  min-width: 1050px;
+  min-width: 690px;
   width: 100%;
   table-layout: fixed;
 }
@@ -1040,7 +1040,7 @@ footer,
 .mapping-grid td:nth-child(2) {
   min-width: 230px;
 }
-.mapping-grid td:nth-child(5) {
+.mapping-grid td:nth-child(3) {
   min-width: 125px;
 }
 .mapping-save-bar {
@@ -1073,9 +1073,6 @@ footer,
 }
 .account-mappings[hidden] {
   display: none;
-}
-.mapping-grid input[type="date"] {
-  min-width: 135px;
 }
 .mapping-dirty {
   background: #fff9e9;

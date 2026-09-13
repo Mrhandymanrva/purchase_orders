@@ -11,7 +11,6 @@ const row = (accountId = "demo-81", fields: object = {}) => ({
   accountId,
   cardUser: "Alex Morgan",
   personId: "technician:demo-1",
-  from: "2026-09-01",
   ...fields,
 });
 const batch = (mappings: object[], revision = 1) =>
@@ -44,7 +43,7 @@ test("save all imports 25 assignments without reasons and audits before/after ow
   assert.ok(verifyAudit(s.audit));
 });
 
-test("bulk validation is atomic for unknown people, unknown accounts, duplicate edits and overlapping periods", () => {
+test("bulk validation is atomic for unknown people, unknown accounts, duplicate edits and duplicate cards", () => {
   const s = seed();
   applyAction(
     s,
@@ -70,41 +69,27 @@ test("bulk validation is atomic for unknown people, unknown accounts, duplicate 
     assert.deepEqual(s, before);
   }
   assert.throws(() => batch([]));
-  assert.throws(() => batch([row("demo-82", { from: "2026-02-30" })]));
+  assert.throws(() => batch([row("demo-82", { cardUser: "" })]));
 });
 
-test("save all validates the final date periods regardless of row order", () => {
+test("save all rejects multiple owners for one card even when legacy date periods do not overlap", () => {
   for (const reverse of [false, true]) {
-    const s = seed();
-    applyAction(
-      s,
-      actionSchema.parse({
-        type: "save-card-mapping",
-        revision: 1,
-        mapping: row(),
-      }),
-      "operator",
-    );
-    const prior = s.cardMappings![0];
+    const s = seed(),
+      before = structuredClone(s);
     const edits = [
-      { ...prior, through: "2026-09-09" },
+      row("demo-81", { from: "2026-01-01", through: "2026-06-30" }),
       row("demo-81", {
-        from: "2026-09-10",
+        from: "2026-07-01",
         cardUser: "Chris Parker",
         personId: "technician:demo-2",
       }),
     ];
-    applyAction(s, batch(reverse ? edits.reverse() : edits), "operator");
-    assert.equal(s.cardMappings!.length, 2);
-    assert.equal(
-      s.records.find((r) => r.id === "Q-1043")?.cardUser,
-      "Alex Morgan",
+    assert.throws(
+      () =>
+        applyAction(s, batch(reverse ? edits.reverse() : edits), "operator"),
+      /same card/,
     );
-    assert.equal(
-      s.records.find((r) => r.id === "Q-1041")?.cardUser,
-      "Chris Parker",
-    );
-    assert.ok(verifyAudit(s.audit));
+    assert.deepEqual(s, before);
   }
 });
 
@@ -122,7 +107,11 @@ test("save row accepts omitted reasons and preserves unrelated assignments and h
     actionSchema.parse({
       type: "save-card-mapping",
       revision: 1,
-      mapping: row("demo-82", { id: edit.id, through: "2026-09-20" }),
+      mapping: row("demo-82", {
+        id: edit.id,
+        cardUser: "Chris Parker",
+        personId: "technician:demo-2",
+      }),
     }),
     "operator",
   );
@@ -134,8 +123,8 @@ test("save row accepts omitted reasons and preserves unrelated assignments and h
     s.cardMappings!.find((m) => m.id === edit.id)?.reason,
     "Historical verification note",
   );
-  assert.equal((s.audit.at(-1)!.detail as any).before.through, undefined);
-  assert.equal((s.audit.at(-1)!.detail as any).after.through, "2026-09-20");
+  assert.equal((s.audit.at(-1)!.detail as any).before.cardUser, "Alex Morgan");
+  assert.equal((s.audit.at(-1)!.detail as any).after.cardUser, "Chris Parker");
   assert.ok(verifyAudit(s.audit));
 });
 
@@ -222,9 +211,7 @@ test("bulk API checks auth/origin, persists one revision, rejects stale saves an
         await send({
           ...body,
           revision: saved.revision,
-          mappings: [
-            row("demo-83", { from: "2026-09-10", through: "2026-09-01" }),
-          ],
+          mappings: [row("demo-83", { cardUser: "" })],
         })
       ).status,
       400,

@@ -18,7 +18,6 @@ const assert = require("node:assert/strict");
       id: existing?.id,
       accountId: "demo-81",
       cardUser: "Alex Morgan",
-      from: "2026-09-01",
       reason: "Demo QA: verified individual subaccount roster",
     },
   });
@@ -34,16 +33,37 @@ const assert = require("node:assert/strict");
       ),
   );
   assert.equal(s.audit.at(-1).action, "Card subaccount mapping saved");
+  const savedMapping = s.cardMappings.find((m) => m.accountId === "demo-81");
+  assert.equal(savedMapping.from, undefined);
+  assert.equal(savedMapping.through, undefined);
   r = await post({
-    type: "save-card-mapping",
-    mapping: {
-      accountId: "demo-81",
-      cardUser: "Other User",
-      from: "2026-09-01",
-      reason: "Should reject an overlap",
-    },
+    type: "save-card-mappings",
+    mappings: [
+      {
+        accountId: "demo-81",
+        cardUser: "Alex Morgan",
+      },
+      {
+        accountId: "demo-81",
+        cardUser: "Alex Morgan",
+      },
+    ],
   });
   assert.equal(r.status, 400);
+  r = await post({
+    type: "save-card-mapping",
+    mapping: { accountId: "demo-81", cardUser: "Alex Morgan" },
+  });
+  assert.equal(r.status, 200);
+  s = await r.json();
+  assert.equal(
+    s.cardMappings.filter((m) => m.accountId === "demo-81").length,
+    1,
+  );
+  assert.equal(
+    s.cardMappings.find((m) => m.accountId === "demo-81").id,
+    savedMapping.id,
+  );
   r = await post({ type: "sync" });
   assert.equal(r.status, 200);
   s = await r.json();
@@ -58,7 +78,7 @@ const assert = require("node:assert/strict");
   assert.ok(csv.includes("PO-2041"));
   assert.ok(!csv.includes("demo-82"));
   console.log(
-    "Subaccount HTTP checks passed: save, audit, overlapping-period rejection, resync and individual report with PO links.",
+    "Subaccount HTTP checks passed: permanent mapping save, audit, duplicate-card rejection, repeated-save identity, resync and individual report with PO links.",
   );
 })().catch((e) => {
   console.error(e);

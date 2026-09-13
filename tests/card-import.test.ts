@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
+import { compatibleXlsx } from "../lib/xlsx-compat";
 import { readFile } from "node:fs/promises";
 import { seed } from "../lib/seed";
 import { planMappingImport, type ImportRow } from "../lib/card-import";
@@ -23,10 +24,21 @@ const row = (v: Partial<ImportRow> = {}): ImportRow => ({
   row: 2,
   accountId: "demo-81",
   cardUser: "Jordan Smith",
-  from: "2026-09-01",
   ...v,
 });
 const reason = "Verified cardholder roster";
+
+test("two-column card mapping files work without dates and preserve card IDs as text", async () => {
+  const rows = await parseMappingFile(
+    Buffer.from("Subaccount ID,Card user\n00123,Jordan Smith\n"),
+    "cards.csv",
+  );
+  assert.equal(rows[0].accountId, "00123");
+  const result = planMappingImport(seed(), rows, reason);
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.mappings[0].from, undefined);
+  assert.equal(result.mappings[0].through, undefined);
+});
 test("downloadable template is readable, and its blank rows are never imported", async () => {
   const bytes = await readFile(
     new URL("../public/templates/card-mappings-template.xlsx", import.meta.url),
@@ -35,6 +47,28 @@ test("downloadable template is readable, and its blank rows are never imported",
     parseMappingFile(bytes, "template.xlsx"),
     /No mapping rows/,
   );
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load((await compatibleXlsx(bytes)) as any);
+  const sheet = workbook.getWorksheet("Card mappings")!;
+  assert.deepEqual(sheet.getRow(1).values, [
+    ,
+    "Mapping ID",
+    "Subaccount ID",
+    "Subaccount name",
+    "Card user",
+    "ST Person ID",
+    "Reason",
+  ]);
+  sheet.getRow(2).getCell(2).value = "00123";
+  sheet.getRow(2).getCell(4).value = "Jordan Smith";
+  const filled = await parseMappingFile(
+    Buffer.from(await workbook.xlsx.writeBuffer()),
+    "filled-template.xlsx",
+  );
+  assert.equal(filled.length, 1);
+  assert.equal(filled[0].accountId, "00123");
+  assert.equal(filled[0].cardUser, "Jordan Smith");
+  assert.equal(filled[0].from, undefined);
 });
 const plan = (s: ReturnType<typeof seed>, rows: ImportRow[]) =>
   planMappingImport(s, rows, reason);
@@ -61,67 +95,70 @@ test("25-card roster is idempotent; corrections keep identity and omissions keep
   assert.equal(changed.mappings[0].id, s.cardMappings[0].id);
   assert.equal(changed.mappings[1].cardUser, "Employee 2");
 });
-test("later assignments close open history and repeated old blank end dates do not reopen it", () => {
+test("repeat uploads correct the same card for its full history and ignore legacy date columns", () => {
   const s = seed();
   s.cardMappings = plan(s, [row()]).mappings;
-  const next = plan(s, [row({ from: "2026-09-10", cardUser: "New Employee" })]);
-  assert.equal(next.counts.closed, 1);
-  assert.equal(next.counts.new, 1);
-  assert.equal(next.mappings[0].through, "2026-09-09");
-  s.cardMappings = next.mappings;
-  const repeat = plan(s, [
-    row(),
-    row({ row: 3, from: "2026-09-10", cardUser: "New Employee" }),
+  const id = s.cardMappings[0].id;
+  const next = plan(s, [
+    row({
+      from: "2026-09-10",
+      through: "2026-09-11",
+      cardUser: "Correct Employee",
+    }),
   ]);
-  assert.deepEqual(repeat.errors, []);
-  assert.equal(repeat.counts.unchanged, 2);
-  const records = applyOwnership(s.records, s);
-  assert.equal(
-    records.find((r) => r.id === "Q-1043")?.cardUser,
-    "Jordan Smith",
+  assert.equal(next.counts.closed, 0);
+  assert.equal(next.counts.new, 0);
+  assert.equal(next.counts.updated, 1);
+  assert.equal(next.mappings.length, 1);
+  assert.equal(next.mappings[0].id, id);
+  assert.equal(next.mappings[0].from, undefined);
+  assert.equal(next.mappings[0].through, undefined);
+  s.cardMappings = next.mappings;
+  assert.ok(
+    applyOwnership(s.records, s)
+      .filter((r) => r.accountId === "demo-81")
+      .every((r) => r.cardUser === "Correct Employee"),
   );
   assert.equal(
-    records.find((r) => r.id === "Q-1041")?.cardUser,
-    "New Employee",
+    plan(s, [row({ cardUser: "Correct Employee", from: "not a date" })]).counts
+      .unchanged,
+    1,
   );
 });
-test("Mapping ID permits date correction without creating a second assignment", () => {
+
+test("Mapping ID preserves identity on employee corrections and cannot move to another card", () => {
   const s = seed();
   s.cardMappings = plan(s, [row()]).mappings;
-  const result = plan(s, [
-    row({ id: s.cardMappings[0].id, from: "2026-08-01" }),
-  ]);
+  const id = s.cardMappings[0].id;
+  const result = plan(s, [row({ id, cardUser: "Correct Employee" })]);
   assert.deepEqual(result.errors, []);
   assert.equal(result.counts.updated, 1);
   assert.equal(result.mappings.length, 1);
+  assert.equal(result.mappings[0].id, id);
   assert.match(
     plan(s, [row({ id: "missing" })]).errors[0].message,
     /not found/,
   );
   assert.match(
-    plan(s, [row({ id: s.cardMappings[0].id, accountId: "other" })]).errors[0]
-      .message,
+    plan(s, [row({ id, accountId: "other" })]).errors[0].message,
     /different subaccount/,
   );
 });
-test("duplicate, overlapping and impossible dates block the entire plan without mutating input", () => {
+
+test("duplicate cards block the plan even with different legacy dates and never mutate input", () => {
   const s = seed();
-  s.cardMappings = plan(s, [row({ through: "2026-09-15" })]).mappings;
+  s.cardMappings = plan(s, [row()]).mappings;
   const before = structuredClone(s);
   assert.ok(
-    plan(s, [row({ row: 3, from: "2026-09-10" })]).errors.some((e) =>
-      e.message.includes("overlap"),
-    ),
+    plan(s, [
+      row(),
+      row({ row: 3, from: "2026-09-10", cardUser: "Other Employee" }),
+    ]).errors.some((e) => e.message.includes("Duplicate")),
   );
-  assert.ok(
-    plan(s, [row(), row({ row: 3 })]).errors.some((e) =>
-      e.message.includes("Duplicate"),
-    ),
-  );
-  assert.ok(plan(s, [row({ from: "2026-02-30" })]).errors.length);
-  assert.ok(plan(s, [row({ through: "2026-08-01" })]).errors.length);
+  assert.ok(plan(s, [row({ cardUser: "" })]).errors.length);
   assert.deepEqual(s, before);
 });
+
 test("names must resolve uniquely; explicit new IDs are supported and parent ID is rejected", () => {
   const s = seed();
   const name = s.records.find((r) => r.accountId === "demo-81")!.account;
@@ -220,6 +257,7 @@ test("XLSX reads actual dates and rejects formula cells, unsafe numbers and over
 });
 test("signed preview cannot be tampered with or applied after expiry", () => {
   const receipt = {
+    policy: "card-lifetime-v1" as const,
     revision: 1,
     expires: Date.now() + 10000,
     filename: "cards.csv",
@@ -229,6 +267,13 @@ test("signed preview cannot be tampered with or applied after expiry", () => {
   };
   const token = signImportReceipt(receipt);
   assert.deepEqual(readImportReceipt(token), receipt);
+  assert.throws(
+    () =>
+      readImportReceipt(
+        signImportReceipt({ ...receipt, policy: undefined } as any),
+      ),
+    /workflow changed/,
+  );
   assert.throws(() => readImportReceipt("A" + token.slice(1)), /changed/);
   assert.throws(
     () =>
@@ -246,10 +291,10 @@ test("API previews without mutation, atomically imports, rejects stale repeats, 
       headers = { origin: base };
     const initial = await readState();
     const csv =
-      "Subaccount ID,Card user,Effective from\n" +
+      "Subaccount ID,Card user\n" +
       Array.from(
         { length: 25 },
-        (_, i) => `${i ? 900 + i : "demo-81"},Upload Person ${i},2026-09-01`,
+        (_, i) => `${i ? 900 + i : "demo-81"},Upload Person ${i}`,
       ).join("\n");
     const preview = async (text: string) =>
       POST(
@@ -295,13 +340,12 @@ test("API previews without mutation, atomically imports, rejects stale repeats, 
     );
     const exportedText = await exported.text();
     assert.ok(exportedText.includes("Corrected Card User"));
+    assert.ok(!exportedText.includes("Effective from"));
     const roundtrip = await (await preview(exportedText)).json();
     assert.equal(roundtrip.counts.unchanged, 25);
     const beforeInvalid = await readState();
     const bad = await (
-      await preview(
-        csv + "\nnew-id,Valid Person,2026-09-01\nbad-id,Bad Date,2026-02-30",
-      )
+      await preview(csv + "\nnew-id,Valid Person\nbad-id,")
     ).json();
     assert.ok(bad.errors.length);
     assert.equal(bad.token, null);
