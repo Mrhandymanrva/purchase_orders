@@ -11,7 +11,7 @@ import { fingerprint, reconcile, normalize, ENGINE_VERSION } from "./engine";
 import { appendAudit } from "./store";
 import { suggestRules } from "./suggestions";
 import { applyOwnership } from "./ownership";
-import { resolvePerson, accountOptions } from "./directory";
+import { saveCardMappings } from "./save-card-mappings";
 import { ServiceTitanSetupError } from "./servicetitan-settings";
 const ruleSchema = z
   .object({
@@ -45,6 +45,11 @@ export const actionSchema = z.discriminatedUnion("type", [
     revision: z.number().int(),
     vanStockTypeIds: z.array(z.string().min(1)).max(50),
     reason: z.string().trim().min(5).max(500),
+  }),
+  z.object({
+    type: z.literal("save-card-mappings"),
+    revision: z.number().int(),
+    mappings: z.array(cardMappingSchema).min(1).max(500),
   }),
   z.object({
     type: z.literal("save-card-mapping"),
@@ -156,71 +161,16 @@ export function applyAction(
       appliesOnNextSync: true,
     });
   }
-  if (action.type === "save-card-mapping") {
-    const data = cardMappingSchema.parse(action.mapping);
-    const before = data.id
-      ? state.cardMappings?.find((m) => m.id === data.id)
-      : undefined;
-    if (data.id && !before) throw Error("Subaccount mapping no longer exists");
-    if (!accountOptions(state).some((a) => a.id === data.accountId))
-      throw Error("Select a subaccount from imported card purchases");
-    if (
-      (state.quickbooks?.parentAccountId ||
-        process.env.QBO_PARENT_CC_ACCOUNT_ID) &&
-      data.accountId ===
-        (state.quickbooks?.parentAccountId ||
-          process.env.QBO_PARENT_CC_ACCOUNT_ID)
-    )
-      throw Error(
-        "The parent credit-card account cannot be assigned to one person",
-      );
-    if (
-      state.cardMappings?.some(
-        (m) =>
-          m.id !== data.id &&
-          m.accountId === data.accountId &&
-          data.from <= (m.through || "9999-12-31") &&
-          m.from <= (data.through || "9999-12-31"),
-      )
-    )
-      throw Error(
-        "This subaccount already has a mapping during those dates. Edit its end date before assigning a new user.",
-      );
-    const mapping = {
-      ...data,
-      ...resolvePerson(state, data.cardUser, data.personId, before),
-      accountName:
-        accountOptions(state).find((a) => a.id === data.accountId)?.name ||
-        data.accountName ||
-        before?.accountName,
-      id: data.id || randomUUID(),
-    };
-    state.cardMappings = [
-      ...(state.cardMappings || []).filter((m) => m.id !== mapping.id),
-      mapping,
-    ];
-    const previous = state.records;
-    state.records = applyOwnership(state.records, state);
-    const affectedChargeIds = state.records
-      .filter(
-        (r, i) =>
-          r.cardUser !== previous[i].cardUser ||
-          r.ownershipSource !== previous[i].ownershipSource,
-      )
-      .map((r) => r.id);
-    const invalidatedDecisionIds = state.decisions
-      .filter(
-        (d) =>
-          fingerprint(state.records, [...d.charges, ...d.pos]) !==
-          d.fingerprint,
-      )
-      .map((d) => d.resultId);
-    appendAudit(state, actor, "Card subaccount mapping saved", {
-      before: before || null,
-      after: mapping,
-      affectedChargeIds,
-      invalidatedDecisionIds,
-    });
+  if (
+    action.type === "save-card-mapping" ||
+    action.type === "save-card-mappings"
+  ) {
+    saveCardMappings(
+      state,
+      action.type === "save-card-mapping" ? [action.mapping] : action.mappings,
+      actor,
+      action.type === "save-card-mappings",
+    );
   }
   if (action.type === "scorecard-settings") {
     const ids = [...new Set(action.vanStockTypeIds)];

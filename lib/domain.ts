@@ -49,7 +49,7 @@ export const cardMappingSchema = z
     personId: z.string().trim().min(1).max(100).optional(),
     from: calendarDate,
     through: calendarDate.optional(),
-    reason: z.string().trim().min(5).max(500),
+    reason: z.string().trim().max(500).default(""),
   })
   .refine(
     (m) => !m.through || m.from <= m.through,

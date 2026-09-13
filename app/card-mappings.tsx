@@ -1,21 +1,19 @@
 "use client";
-import { useEffect, useState } from "react";
-import type { State, CardMapping } from "@/lib/domain";
+import { useEffect, useRef, useState } from "react";
+import { calendarDate, type State, type CardMapping } from "@/lib/domain";
 import { accountOptions } from "@/lib/directory";
 import CardMappingUpload from "./card-mapping-upload";
+
 type Save = (body: object) => Promise<boolean>;
-function MappingRow({
-  state,
-  initial,
-  busy,
-  onSave,
-}: {
-  state: State;
-  initial: Partial<CardMapping>;
-  busy: boolean;
-  onSave: Save;
-}) {
-  const initialDraft = () => ({
+type Draft = {
+  accountId: string;
+  person: string;
+  from: string;
+  through: string;
+};
+type Row = { key: string; initial: Partial<CardMapping> };
+function initialDraft(initial: Partial<CardMapping>, state: State): Draft {
+  return {
     accountId: initial.accountId || "",
     person:
       initial.personId || (initial.cardUser ? `name:${initial.cardUser}` : ""),
@@ -25,58 +23,32 @@ function MappingRow({
         ? "2026-09-01"
         : new Date().toISOString().slice(0, 10)),
     through: initial.through || "",
-    reason: initial.reason || "",
-  });
-  const [draft, setDraft] = useState(initialDraft),
-    [dirty, setDirty] = useState(false),
-    [error, setError] = useState("");
-  useEffect(() => {
-    if (!dirty) setDraft(initialDraft());
-  }, [
-    initial.accountId,
-    initial.cardUser,
-    initial.personId,
-    initial.from,
-    initial.through,
-    initial.reason,
-    dirty,
-  ]);
-  const update = (field: string, value: string) => {
-    setDraft((d) => ({ ...d, [field]: value }));
-    setDirty(true);
-    setError("");
   };
+}
+
+function MappingRow({
+  state,
+  row,
+  draft,
+  dirty,
+  busy,
+  error,
+  onUpdate,
+  onSave,
+}: {
+  state: State;
+  row: Row;
+  draft: Draft;
+  dirty: boolean;
+  busy: boolean;
+  error?: string;
+  onUpdate: (field: keyof Draft, value: string) => void;
+  onSave: () => void;
+}) {
+  const initial = row.initial;
   const people = state.directory?.people || [],
-    accounts = accountOptions(state),
-    label = initial.id || initial.accountId || "new";
-  async function save() {
-    const person = people.find((p) => p.id === draft.person);
-    const cardUser = person?.name || draft.person.replace(/^name:/, "");
-    if (
-      !draft.accountId ||
-      !cardUser ||
-      !draft.from ||
-      draft.reason.trim().length < 5
-    ) {
-      setError(
-        "Choose an account and person, start date, and a reason (5+ characters).",
-      );
-      return;
-    }
-    const ok = await onSave({
-      type: "save-card-mapping",
-      mapping: {
-        id: initial.id,
-        accountId: draft.accountId,
-        cardUser,
-        personId: person?.id,
-        from: draft.from,
-        through: draft.through || undefined,
-        reason: draft.reason,
-      },
-    });
-    if (ok) setDirty(false);
-  }
+    accounts = accountOptions(state);
+  const label = initial.id || initial.accountId || row.key;
   return (
     <tr className={dirty ? "mapping-dirty" : ""}>
       <td>
@@ -84,7 +56,7 @@ function MappingRow({
           aria-label={`QuickBooks account ${label}`}
           value={draft.accountId}
           disabled={busy}
-          onChange={(e) => update("accountId", e.target.value)}
+          onChange={(e) => onUpdate("accountId", e.target.value)}
         >
           <option value="">Select subaccount</option>
           {accounts
@@ -103,7 +75,7 @@ function MappingRow({
           aria-label={`ServiceTitan person ${label}`}
           value={draft.person}
           disabled={busy}
-          onChange={(e) => update("person", e.target.value)}
+          onChange={(e) => onUpdate("person", e.target.value)}
         >
           <option value="">Select person</option>
           {draft.person.startsWith("name:") && (
@@ -143,7 +115,7 @@ function MappingRow({
           type="date"
           value={draft.from}
           disabled={busy}
-          onChange={(e) => update("from", e.target.value)}
+          onChange={(e) => onUpdate("from", e.target.value)}
         />
       </td>
       <td>
@@ -152,21 +124,11 @@ function MappingRow({
           type="date"
           value={draft.through}
           disabled={busy}
-          onChange={(e) => update("through", e.target.value)}
+          onChange={(e) => onUpdate("through", e.target.value)}
         />
         <small className="block">Blank = ongoing</small>
       </td>
-      <td>
-        <input
-          aria-label={`Mapping reason ${label}`}
-          value={draft.reason}
-          maxLength={500}
-          disabled={busy}
-          placeholder="Why this assignment?"
-          onChange={(e) => update("reason", e.target.value)}
-        />
-      </td>
-      <td>
+      <td className="mapping-row-actions">
         <span
           className={
             "badge " + (dirty ? "warning" : initial.id ? "neutral" : "warning")
@@ -176,8 +138,8 @@ function MappingRow({
         </span>
         <button
           className="mapping-save"
-          disabled={busy || (!dirty && !!initial.id)}
-          onClick={save}
+          disabled={busy || !dirty}
+          onClick={onSave}
         >
           Save row
         </button>
@@ -190,25 +152,170 @@ function MappingRow({
     </tr>
   );
 }
+
 export default function CardMappings({
   state,
   busy,
   onSave,
   onImported,
+  hidden = false,
 }: {
   state: State;
   busy: boolean;
   onSave: Save;
   onImported: (s: State) => void;
+  hidden?: boolean;
 }) {
   const [newRows, setNewRows] = useState<number[]>([]);
-  const accounts = accountOptions(state);
-  const mappings = state.cardMappings || [];
+  const [drafts, setDrafts] = useState<
+    Record<string, { draft: Draft; initial: Partial<CardMapping> }>
+  >({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [notice, setNotice] = useState("");
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const nextRow = useRef(0);
+  const accounts = accountOptions(state),
+    mappings = state.cardMappings || [];
   const unmapped = accounts.filter(
     (a) => a.active && !mappings.some((m) => m.accountId === a.id),
   );
+  const currentRows: Row[] = [
+    ...[...mappings]
+      .sort(
+        (a, b) =>
+          a.accountId.localeCompare(b.accountId) ||
+          a.from.localeCompare(b.from),
+      )
+      .map((m) => ({ key: m.id, initial: m })),
+    ...unmapped.map((a) => ({
+      key: `unmapped:${a.id}`,
+      initial: { accountId: a.id },
+    })),
+    ...newRows.map((n) => ({ key: `new:${n}`, initial: {} })),
+  ];
+  // Keep another row's draft even if saving a changed account removes its
+  // original unmapped placeholder from the server-provided roster.
+  const rows = [
+    ...currentRows,
+    ...Object.entries(drafts)
+      .filter(([key]) => !currentRows.some((row) => row.key === key))
+      .map(([key, value]) => ({ key, initial: value.initial })),
+  ];
+  const dirtyRows = rows.filter(
+    (row) =>
+      drafts[row.key] &&
+      JSON.stringify(drafts[row.key].draft) !==
+        JSON.stringify(initialDraft(row.initial, state)),
+  );
+  const dirtyKeys = new Set(dirtyRows.map((row) => row.key));
+  const locked = busy || saving;
+  useEffect(() => {
+    if (!dirtyRows.length) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirtyRows.length]);
+
+  function update(row: Row, field: keyof Draft, value: string) {
+    setDrafts((current) => ({
+      ...current,
+      [row.key]: {
+        initial: current[row.key]?.initial || row.initial,
+        draft: {
+          ...(current[row.key]?.draft || initialDraft(row.initial, state)),
+          [field]: value,
+        },
+      },
+    }));
+    setErrors((current) => {
+      const next = { ...current };
+      delete next[row.key];
+      return next;
+    });
+    setNotice("");
+  }
+  async function saveRows(selected: Row[], bulk: boolean) {
+    if (locked || savingRef.current || !selected.length) return;
+    const invalid: Record<string, string> = {};
+    const payload = selected.map((row) => {
+      const draft = drafts[row.key]?.draft || initialDraft(row.initial, state);
+      const person = state.directory?.people.find((p) => p.id === draft.person);
+      const historical =
+        draft.person === row.initial.personId
+          ? row.initial.cardUser
+          : undefined;
+      const cardUser =
+        person?.name ||
+        historical ||
+        (draft.person.startsWith("name:") ? draft.person.slice(5) : "");
+      if (!draft.accountId || !cardUser)
+        invalid[row.key] = "Choose a subaccount and person.";
+      else if (
+        !calendarDate.safeParse(draft.from).success ||
+        (draft.through && !calendarDate.safeParse(draft.through).success)
+      )
+        invalid[row.key] = "Enter a valid start date and, if needed, end date.";
+      else if (draft.through && draft.through < draft.from)
+        invalid[row.key] = "End date must be on or after start date.";
+      return {
+        id: row.initial.id,
+        accountId: draft.accountId,
+        cardUser,
+        personId: person?.id || (historical ? row.initial.personId : undefined),
+        from: draft.from,
+        through: draft.through || undefined,
+      };
+    });
+    if (Object.keys(invalid).length) {
+      setErrors(invalid);
+      setNotice(
+        `Check ${Object.keys(invalid).length} highlighted row(s). Nothing was saved; your edits are still here.`,
+      );
+      return;
+    }
+    savingRef.current = true;
+    setSaving(true);
+    setNotice("");
+    try {
+      const ok = await onSave(
+        bulk
+          ? { type: "save-card-mappings", mappings: payload }
+          : { type: "save-card-mapping", mapping: payload[0] },
+      );
+      if (!ok) {
+        setNotice(
+          "Could not save. Your edits are still here; see the error above.",
+        );
+        return;
+      }
+      const saved = new Set(selected.map((row) => row.key));
+      setDrafts((current) =>
+        Object.fromEntries(
+          Object.entries(current).filter(([key]) => !saved.has(key)),
+        ),
+      );
+      setErrors((current) =>
+        Object.fromEntries(
+          Object.entries(current).filter(([key]) => !saved.has(key)),
+        ),
+      );
+      setNewRows((current) => current.filter((n) => !saved.has(`new:${n}`)));
+      setNotice(
+        `${selected.length} assignment${selected.length === 1 ? "" : "s"} saved.`,
+      );
+    } catch {
+      setNotice("Could not save. Your edits are still here. Try again.");
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }
   return (
-    <section className="panel account-mappings">
+    <section className="panel account-mappings" hidden={hidden}>
       <div className="grid-heading">
         <div>
           <h2>Card assignments</h2>
@@ -219,14 +326,17 @@ export default function CardMappings({
         </div>
         <div className="heading-actions">
           <button
-            disabled={busy}
+            disabled={locked}
             onClick={() => onSave({ type: "refresh-directory" })}
           >
             Refresh ST / QB dropdowns
           </button>
           <button
-            disabled={busy}
-            onClick={() => setNewRows((r) => [...r, (r.at(-1) || 0) + 1])}
+            disabled={locked}
+            onClick={() => {
+              const n = ++nextRow.current;
+              setNewRows((current) => [...current, n]);
+            }}
           >
             Add assignment period
           </button>
@@ -236,9 +346,10 @@ export default function CardMappings({
         </div>
       </div>
       <p className="muted">
-        Select the QuickBooks card subaccount and the actual ServiceTitan card
-        user. Save each changed row. End an earlier assignment before
-        reassigning the card; historical periods remain visible.
+        Choose the card subaccount, ServiceTitan person and effective dates,
+        then Save all changes. You can also save an individual row. For a
+        reassignment, end the earlier period before the new one starts; both
+        changes can be saved together.
       </p>
       {!state.directory?.people.length && (
         <p className="notice">
@@ -255,54 +366,59 @@ export default function CardMappings({
           refreshed {new Date(state.directory.syncedAt).toLocaleString()}
         </p>
       )}
+      <div className="mapping-save-bar">
+        <div>
+          <strong aria-live="polite">
+            {dirtyRows.length
+              ? `${dirtyRows.length} unsaved assignment${dirtyRows.length === 1 ? "" : "s"}`
+              : "No unsaved changes"}
+          </strong>
+          {notice && (
+            <small className="block" role="status">
+              {notice}
+            </small>
+          )}
+        </div>
+        <button
+          className="primary"
+          disabled={locked || !dirtyRows.length}
+          onClick={() => saveRows(dirtyRows, true)}
+        >
+          {saving ? "Saving…" : "Save all changes"}
+        </button>
+      </div>
       <div className="mapping-grid table-scroll">
         <table>
+          <colgroup>
+            <col style={{ width: "29%" }} />
+            <col style={{ width: "27%" }} />
+            <col style={{ width: "15%" }} />
+            <col style={{ width: "15%" }} />
+            <col style={{ width: "14%" }} />
+          </colgroup>
           <thead>
             <tr>
               <th>QUICKBOOKS SUBACCOUNT</th>
               <th>SERVICETITAN PERSON</th>
               <th>EFFECTIVE FROM</th>
               <th>EFFECTIVE THROUGH</th>
-              <th>REASON</th>
-              <th>STATUS / SAVE</th>
+              <th className="mapping-row-actions">STATUS / SAVE</th>
             </tr>
           </thead>
           <tbody>
-            {[...mappings]
-              .sort(
-                (a, b) =>
-                  a.accountId.localeCompare(b.accountId) ||
-                  a.from.localeCompare(b.from),
-              )
-              .map((m) => (
-                <MappingRow
-                  key={m.id}
-                  initial={m}
-                  state={state}
-                  busy={busy}
-                  onSave={onSave}
-                />
-              ))}
-            {unmapped.map((a) => (
+            {rows.map((row) => (
               <MappingRow
-                key={`unmapped:${a.id}`}
-                initial={{ accountId: a.id }}
+                key={row.key}
+                row={row}
                 state={state}
-                busy={busy}
-                onSave={onSave}
-              />
-            ))}
-            {newRows.map((n) => (
-              <MappingRow
-                key={`new:${n}`}
-                initial={{}}
-                state={state}
-                busy={busy}
-                onSave={async (body) => {
-                  const ok = await onSave(body);
-                  if (ok) setNewRows((r) => r.filter((v) => v !== n));
-                  return ok;
-                }}
+                draft={
+                  drafts[row.key]?.draft || initialDraft(row.initial, state)
+                }
+                dirty={dirtyKeys.has(row.key)}
+                busy={locked}
+                error={errors[row.key]}
+                onUpdate={(field, value) => update(row, field, value)}
+                onSave={() => saveRows([row], false)}
               />
             ))}
           </tbody>
@@ -316,7 +432,16 @@ export default function CardMappings({
       )}
       <details className="upload-disclosure">
         <summary>Upload or update mappings from Excel / CSV</summary>
-        <CardMappingUpload state={state} busy={busy} onImported={onImported} />
+        {dirtyRows.length > 0 && (
+          <p className="muted">
+            Save your grid changes before uploading a spreadsheet.
+          </p>
+        )}
+        <CardMappingUpload
+          state={state}
+          busy={locked || dirtyRows.length > 0}
+          onImported={onImported}
+        />
       </details>
     </section>
   );

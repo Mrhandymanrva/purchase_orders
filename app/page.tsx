@@ -679,14 +679,13 @@ export default function Page() {
               </section>
             </div>
           )}
-          {tab === "Card assignments" && (
-            <CardMappings
-              state={state}
-              busy={busy}
-              onSave={mutate}
-              onImported={setState}
-            />
-          )}
+          <CardMappings
+            hidden={tab !== "Card assignments"}
+            state={state}
+            busy={busy}
+            onSave={mutate}
+            onImported={setState}
+          />
           {tab === "Technician scorecards" && (
             <TechnicianScorecard
               state={state}
