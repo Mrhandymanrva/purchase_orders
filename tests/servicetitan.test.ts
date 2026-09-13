@@ -248,16 +248,18 @@ test("PO adapter imports only the explicitly selected business units", async () 
             hasMore: false,
           });
         return Response.json({
-          data: ["r", "h", null, undefined].map((businessUnitId, index) => ({
-            id: index + 1,
-            vendorId: 1,
-            number: "PO-" + index,
-            date: "2026-09-05",
-            createdOn: "2026-09-05",
-            total: 10,
-            status: "Sent",
-            businessUnitId,
-          })),
+          data: ["r", "h", null, undefined, "r"].map(
+            (businessUnitId, index) => ({
+              id: index + 1,
+              vendorId: 1,
+              number: "PO-" + index,
+              date: "2026-09-05",
+              createdOn: "2026-09-05",
+              total: 10,
+              status: index === 4 ? "Canceled" : "Pending",
+              businessUnitId,
+            }),
+          ),
           hasMore: false,
         });
       },
@@ -265,6 +267,8 @@ test("PO adapter imports only the explicitly selected business units", async () 
     );
     assert.equal(records.length, 1);
     assert.equal(records[0].account, "r");
+    assert.equal(records[0].poStatus, "Pending");
+    assert.equal(records[0].amount, 1000);
     let calls = 0;
     await assert.rejects(
       readST(

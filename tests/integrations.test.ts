@@ -35,7 +35,7 @@ test("QBO charges and credits map correctly without treating DocNumber as PO", (
   assert.equal(mapQBO({ ...qbo, PaymentType: "Cash" }), null);
   assert.throws(() => mapQBO({ ...qbo, CurrencyRef: { value: "CAD" } }));
 });
-test("ST pending/canceled records excluded; vendor directory required", () => {
+test("ST pending POs retain their source status; canceled POs are excluded and vendor identity is required", () => {
   const po = {
     id: 1,
     vendorId: 7,
@@ -46,7 +46,14 @@ test("ST pending/canceled records excluded; vendor directory required", () => {
     status: "Sent",
   };
   assert.equal(mapST(po, new Map([["7", "Ferguson"]]))?.amount, 1234);
+  const pending = mapST(
+    { ...po, status: "Pending" },
+    new Map([["7", "Ferguson"]]),
+  );
+  assert.equal(pending?.amount, 1234);
+  assert.equal(pending?.poStatus, "Pending");
   assert.equal(mapST({ ...po, status: "Canceled" }, new Map()), null);
+  assert.equal(mapST({ ...po, status: "Cancelled" }, new Map()), null);
   assert.throws(() => mapST(po, new Map()));
 });
 test("QBO adapter uses GET only and account-scoped pagination", async () => {

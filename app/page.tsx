@@ -853,6 +853,9 @@ export default function Page() {
                     <small>
                       {r.date} · {r.account}
                     </small>
+                    {r.source === "st" && r.poStatus && (
+                      <small>ServiceTitan PO status: {r.poStatus}</small>
+                    )}
                     <p>{r.description}</p>
                     {r.source === "qbo" && (
                       <>

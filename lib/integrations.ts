@@ -115,7 +115,7 @@ export function mapST(
   vendors: Map<string, string>,
 ): RecordItem | null {
   const p = stSchema.parse(raw);
-  if (/^(canceled|cancelled|pending)$/i.test(p.status)) return null;
+  if (/^(canceled|cancelled)$/i.test(p.status.trim())) return null;
   const vendor = vendors.get(p.vendorId);
   if (!vendor)
     throw Error("Integration ServiceTitan vendor missing from directory");
@@ -132,6 +132,7 @@ export function mapST(
     createdAt: p.createdOn,
     technicianId: p.technicianId || undefined,
     poTypeId: p.typeId || undefined,
+    poStatus: p.status,
     inventoryLocationId: p.inventoryLocationId || undefined,
   });
 }

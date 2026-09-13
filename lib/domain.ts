@@ -20,6 +20,7 @@ export const recordSchema = z.object({
   accountId: z.string().optional(),
   technicianId: z.string().optional(),
   poTypeId: z.string().optional(),
+  poStatus: z.string().optional(),
   inventoryLocationId: z.string().optional(),
   createdAt: z.string().optional(),
 });
