@@ -24,6 +24,7 @@ import CardMappings from "./card-mappings";
 import TechnicianScorecard from "./scorecard";
 import LegalLinks from "./legal-links";
 import IntegrationStatus from "./integration-status";
+import QuickBooksConnection from "./quickbooks-connection";
 export default function Page() {
   const [individual, setIndividual] = useState("All individuals"),
     [loaded, setLoaded] = useState(false);
@@ -83,6 +84,19 @@ export default function Page() {
       to: dateTo,
     }).toString();
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tab") === "Integrations") setTab("Integrations");
+    const qboOutcome = params.get("quickbooks");
+    if (qboOutcome) {
+      setMessage(
+        qboOutcome === "connected"
+          ? "QuickBooks company connected. Load credit-card accounts to choose your cards."
+          : qboOutcome === "denied"
+            ? "QuickBooks authorization was canceled. You can connect again when ready."
+            : "QuickBooks connection did not complete. Check that the Redirect URI is saved, use the original company if reconnecting, and try again.",
+      );
+      window.history.replaceState(null, "", "/?tab=Integrations");
+    }
     fetch("/api/state")
       .then(async (r) => {
         if (!r.ok) throw Error("Could not load data");
@@ -682,7 +696,8 @@ export default function Page() {
           )}
           {tab === "Integrations" && (
             <div className="settings-grid">
-              <IntegrationStatus />
+              <QuickBooksConnection state={state} onChanged={setState} />
+              <IntegrationStatus revision={state.revision} />
               <section className="panel account-mappings">
                 <h2>People, cards and scorecards</h2>
                 <p>

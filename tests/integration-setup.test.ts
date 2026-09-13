@@ -38,14 +38,9 @@ test("setup reports all missing fields and never exposes configured credentials"
   assert.equal(empty.syncReady, false);
   assert.equal(empty.directoryReady, false);
   const failure = new IntegrationSetupError(empty, "sync");
-  for (const key of [
-    "ST_CLIENT_ID",
-    "ST_APP_KEY",
-    "QBO_REALM_ID",
-    "QBO_REFRESH_TOKEN",
-    "QBO_CARD_ACCOUNT_IDS",
-  ])
+  for (const key of ["ST_CLIENT_ID", "ST_APP_KEY"])
     assert.ok(failure.message.includes(key));
+  assert.ok(failure.message.includes("Connect QuickBooks"));
   const good = integrationSetup(complete, false, "2026-09-13");
   assert.equal(good.syncReady, true);
   assert.equal(good.directoryReady, true);

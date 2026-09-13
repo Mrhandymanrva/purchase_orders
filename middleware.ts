@@ -1,7 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 export async function middleware(req: NextRequest) {
   if (
-    ["/api/health", "/eula", "/privacy-policy"].includes(req.nextUrl.pathname)
+    [
+      "/api/health",
+      "/eula",
+      "/privacy-policy",
+      "/api/integrations/quickbooks/callback",
+    ].includes(req.nextUrl.pathname)
   )
     return NextResponse.next();
   if (process.env.DEMO_MODE === "true" && process.env.NODE_ENV !== "production")

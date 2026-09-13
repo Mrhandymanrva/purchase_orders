@@ -172,6 +172,16 @@ export default function PrivacyPage() {
           access procedures when finished.
         </p>
         <p>
+          Connecting QuickBooks sets a necessary security cookie for up to ten
+          minutes to bind the authorization to your browser. The server stores
+          hashed, single-use connection state with the initiating operator and
+          selected environment; expired state cannot authorize a connection and
+          is cleaned up when a new connection starts. The callback clears the
+          cookie. Company identity, chosen card accounts, and connection audit
+          events are retained with the workspace; authorization tokens remain
+          encrypted on the server.
+        </p>
+        <p>
           The App is intended for authorized business users, not children or a
           public consumer audience. Applicable privacy rights depend on your
           location and relationship with the organization. This policy does not

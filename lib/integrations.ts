@@ -1,14 +1,23 @@
 import { z } from "zod";
-import { recordSchema, type RecordItem, type Directory } from "./domain";
-import { pool } from "./store";
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import {
+  recordSchema,
+  type RecordItem,
+  type Directory,
+  type State,
+} from "./domain";
+import { pool, readState } from "./store";
+import {
+  qboSession,
+  configuredQBO,
+  readCreditCardAccounts,
+  cardDescendants,
+  QuickBooksError,
+} from "./quickbooks";
+import { required, getJSON } from "./integration-transport";
+export { getJSON } from "./integration-transport";
+export { encryptToken, decryptToken } from "./token-crypto";
 import { integrationSetup, IntegrationSetupError } from "./integration-setup";
 type Fetcher = typeof fetch;
-const required = (key: string) => {
-  const v = process.env[key];
-  if (!v?.trim()) throw Error(`Integration configuration missing: ${key}`);
-  return v;
-};
 const sourceId = z
   .union([z.string().min(1), z.number().int().safe()])
   .transform(String);
@@ -21,44 +30,6 @@ export function cents(value: string | number): number {
   const n = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
   if (!Number.isSafeInteger(n)) throw Error("Integration amount out of range");
   return s.startsWith("-") ? -n : n;
-}
-export async function getJSON(
-  url: string,
-  headers: Record<string, string>,
-  fetcher: Fetcher = fetch,
-) {
-  const u = new URL(url);
-  if (
-    u.protocol !== "https:" ||
-    ![
-      "quickbooks.api.intuit.com",
-      "sandbox-quickbooks.api.intuit.com",
-      "api.servicetitan.io",
-      "api-integration.servicetitan.io",
-    ].includes(u.hostname)
-  )
-    throw Error("Integration host is not allowed");
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const r = await fetcher(url, {
-      method: "GET",
-      headers: { Accept: "application/json", ...headers },
-      redirect: "error",
-      signal: AbortSignal.timeout(20000),
-    });
-    if (r.ok) return r.json();
-    if ((r.status === 429 || r.status >= 500) && attempt < 3) {
-      const retry = Number(r.headers.get("retry-after"));
-      await new Promise((resolve) =>
-        setTimeout(
-          resolve,
-          Math.min(10000, retry > 0 ? retry * 1000 : 250 * 2 ** attempt),
-        ),
-      );
-      continue;
-    }
-    throw Error(`Integration GET failed (${u.hostname}, HTTP ${r.status})`);
-  }
-  throw Error("Integration retry limit");
 }
 const qboSchema = z.object({
   Id: sourceId,
@@ -171,15 +142,22 @@ export async function readQBO(
   from: string,
   to: string,
   fetcher: Fetcher = fetch,
+  selectedAccounts?: string[],
 ) {
   const base =
     process.env.QBO_ENV === "production"
       ? "https://quickbooks.api.intuit.com"
       : "https://sandbox-quickbooks.api.intuit.com";
   const records: RecordItem[] = [];
-  const accounts = required("QBO_CARD_ACCOUNT_IDS")
-    .split(",")
-    .map((s) => s.trim());
+  const accounts =
+    selectedAccounts ??
+    required("QBO_CARD_ACCOUNT_IDS")
+      .split(",")
+      .map((s) => s.trim());
+  if (!accounts.length)
+    throw new QuickBooksError(
+      "Choose the child cards to import in Integrations.",
+    );
   for (let start = 1; start <= 10001; start += 1000) {
     const query = `SELECT * FROM Purchase WHERE TxnDate >= '${from}' AND TxnDate <= '${to}' STARTPOSITION ${start} MAXRESULTS 1000`;
     const response = await getJSON(
@@ -291,109 +269,6 @@ async function serviceTitanToken(fetcher: Fetcher) {
   return z.object({ access_token: z.string() }).parse(await r.json())
     .access_token;
 }
-function key() {
-  const value = Buffer.from(required("TOKEN_ENCRYPTION_KEY"), "base64");
-  if (value.length !== 32)
-    throw Error(
-      "Integration TOKEN_ENCRYPTION_KEY must contain 32 base64-encoded bytes",
-    );
-  return value;
-}
-export function encryptToken(value: string) {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key(), iv);
-  const ciphertext = Buffer.concat([
-    cipher.update(value, "utf8"),
-    cipher.final(),
-  ]);
-  return Buffer.concat([iv, cipher.getAuthTag(), ciphertext]).toString(
-    "base64",
-  );
-}
-export function decryptToken(value: string) {
-  const bytes = Buffer.from(value, "base64");
-  const decipher = createDecipheriv(
-    "aes-256-gcm",
-    key(),
-    bytes.subarray(0, 12),
-  );
-  decipher.setAuthTag(bytes.subarray(12, 28));
-  return Buffer.concat([
-    decipher.update(bytes.subarray(28)),
-    decipher.final(),
-  ]).toString("utf8");
-}
-async function quickBooksToken(fetcher: Fetcher) {
-  const client = await pool().connect();
-  try {
-    await client.query("BEGIN");
-    await client.query("SELECT pg_advisory_xact_lock(749222)");
-    const stored = await client.query(
-      "SELECT payload FROM oauth_tokens WHERE provider='qbo'",
-    );
-    if (stored.rows[0]?.payload) {
-      const v = JSON.parse(decryptToken(stored.rows[0].payload));
-      if (v.expiresAt > Date.now() + 120000) {
-        await client.query("COMMIT");
-        return v.accessToken;
-      }
-    }
-    const refreshToken = stored.rows[0]?.payload
-      ? JSON.parse(decryptToken(stored.rows[0].payload)).refreshToken
-      : required("QBO_REFRESH_TOKEN");
-    const r = await fetcher(
-      "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer",
-      {
-        method: "POST",
-        headers: {
-          Authorization:
-            "Basic " +
-            Buffer.from(
-              required("QBO_CLIENT_ID") + ":" + required("QBO_CLIENT_SECRET"),
-            ).toString("base64"),
-          "Content-Type": "application/x-www-form-urlencoded",
-          Accept: "application/json",
-        },
-        body: new URLSearchParams({
-          grant_type: "refresh_token",
-          refresh_token: refreshToken,
-        }),
-        redirect: "error",
-        signal: AbortSignal.timeout(20000),
-      },
-    );
-    if (!r.ok)
-      throw Error(
-        `Integration QBO authentication failed (${r.status}); reconnect if refresh token expired`,
-      );
-    const v = z
-      .object({
-        access_token: z.string(),
-        refresh_token: z.string(),
-        expires_in: z.number(),
-      })
-      .parse(await r.json());
-    await client.query(
-      "INSERT INTO oauth_tokens(provider,payload) VALUES('qbo',$1) ON CONFLICT(provider) DO UPDATE SET payload=EXCLUDED.payload",
-      [
-        encryptToken(
-          JSON.stringify({
-            accessToken: v.access_token,
-            refreshToken: v.refresh_token,
-            expiresAt: Date.now() + v.expires_in * 1000,
-          }),
-        ),
-      ],
-    );
-    await client.query("COMMIT");
-    return v.access_token;
-  } catch (e) {
-    await client.query("ROLLBACK");
-    throw e;
-  } finally {
-    client.release();
-  }
-}
 export async function fetchSnapshot(fetcher: Fetcher = fetch) {
   await requireIntegrationSetup("sync");
   const from = required("SYNC_FROM");
@@ -405,11 +280,11 @@ export async function fetchSnapshot(fetcher: Fetcher = fetch) {
     .toISOString()
     .slice(0, 10);
   const stToken = await serviceTitanToken(fetcher),
-    qboToken = await quickBooksToken(fetcher);
+    qbo = await qboSession(fetcher);
   const [pos, charges, directory] = await Promise.all([
     readST(stToken, stFrom, to, fetcher),
-    readQBO(qboToken, required("QBO_REALM_ID"), from, to, fetcher),
-    readDirectories(stToken, qboToken, required("QBO_REALM_ID"), fetcher),
+    readQBO(qbo.accessToken, qbo.realm, from, to, fetcher, qbo.accountIds),
+    readDirectories(stToken, qbo.accessToken, qbo.realm, fetcher, qbo),
   ]);
   const records = [...charges, ...pos];
   if (records.length > 2000)
@@ -429,87 +304,38 @@ export async function readQBAccounts(
   token: string,
   realm: string,
   fetcher: Fetcher = fetch,
+  scope?: { parentAccountId: string; accountIds: string[] },
 ): Promise<Directory["accounts"]> {
-  const base =
-    process.env.QBO_ENV === "production"
-      ? "https://quickbooks.api.intuit.com"
-      : "https://sandbox-quickbooks.api.intuit.com";
-  const schema = z.object({
-    Id: sourceId,
-    Name: z.string(),
-    FullyQualifiedName: z.string().optional(),
-    AccountType: z.string(),
-    SubAccount: z.boolean().optional(),
-    Active: z.boolean(),
-    ParentRef: z.object({ value: sourceId }).optional(),
-  });
-  const accounts: z.infer<typeof schema>[] = [];
-  for (let start = 1; start <= 10001; start += 1000) {
-    const query = `SELECT * FROM Account WHERE Active IN (true, false) STARTPOSITION ${start} MAXRESULTS 1000`;
-    const raw = await getJSON(
-      `${base}/v3/company/${encodeURIComponent(realm)}/query?query=${encodeURIComponent(query)}&minorversion=75`,
-      { Authorization: `Bearer ${token}` },
-      fetcher,
+  const accounts = await readCreditCardAccounts(token, realm, fetcher);
+  const parent = scope?.parentAccountId ?? process.env.QBO_PARENT_CC_ACCOUNT_ID;
+  const ids =
+    scope?.accountIds ??
+    (process.env.QBO_CARD_ACCOUNT_IDS || "")
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
+  if (!parent && !ids.length)
+    throw new QuickBooksError(
+      "Choose your parent credit-card account and the cards to import in Integrations.",
     );
-    const rows =
-      z
-        .object({
-          QueryResponse: z.object({ Account: z.array(schema).optional() }),
-        })
-        .parse(raw).QueryResponse.Account || [];
-    accounts.push(...rows);
-    if (rows.length < 1000) {
-      const parent = process.env.QBO_PARENT_CC_ACCOUNT_ID,
-        allow = new Set(
-          (
-            process.env.QBO_CARD_ACCOUNT_IDS ||
-            (parent ? "" : required("QBO_CARD_ACCOUNT_IDS"))
-          )
-            .split(",")
-            .map((v) => v.trim()),
-        );
-      const belowParent = (a: z.infer<typeof schema>) => {
-        let id = a.ParentRef?.value;
-        const seen = new Set<string>();
-        while (id && !seen.has(id)) {
-          if (id === parent) return true;
-          seen.add(id);
-          id = accounts.find((v) => v.Id === id)?.ParentRef?.value;
-        }
-        return false;
-      };
-      const result = accounts
-        .filter(
-          (a) =>
-            a.AccountType === "Credit Card" &&
-            a.SubAccount &&
-            a.Id !== parent &&
-            (parent ? belowParent(a) : allow.has(a.Id)),
-        )
-        .map((a) => ({
-          id: a.Id,
-          name: a.FullyQualifiedName || a.Name,
-          active: a.Active,
-          parentId: a.ParentRef?.value,
-        }));
-      if (new Set(result.map((a) => a.id)).size !== result.length)
-        throw Error("Integration duplicate QuickBooks account IDs");
-      return result;
-    }
-  }
-  throw Error("Integration QuickBooks account directory pagination limit");
+  return (
+    parent
+      ? cardDescendants(accounts, parent)
+      : accounts.filter((a) => a.subAccount && ids.includes(a.id))
+  ).map(({ subAccount, ...a }) => a);
 }
 export async function readDirectories(
   stToken: string,
   qboToken: string,
   realm: string,
   fetcher: Fetcher = fetch,
+  scope?: { parentAccountId: string; accountIds: string[] },
 ): Promise<Directory> {
   const [techs, employees, types, accounts] = await Promise.all([
     readSTPages("technicians", stToken, fetcher),
     readSTPages("employees", stToken, fetcher),
     readSTPages("purchase-order-types", stToken, fetcher),
-    readQBAccounts(qboToken, realm, fetcher),
+    readQBAccounts(qboToken, realm, fetcher, scope),
   ]);
   const schema = z.object({
     id: sourceId,
@@ -535,9 +361,9 @@ export async function fetchDirectories(fetcher: Fetcher = fetch) {
   await requireIntegrationSetup("directory");
   const [st, qbo] = await Promise.all([
     serviceTitanToken(fetcher),
-    quickBooksToken(fetcher),
+    qboSession(fetcher),
   ]);
-  return readDirectories(st, qbo, required("QBO_REALM_ID"), fetcher);
+  return readDirectories(st, qbo.accessToken, qbo.realm, fetcher, qbo);
 }
 
 export async function readIntegrationSetup() {
@@ -548,7 +374,19 @@ export async function readIntegrationSetup() {
     );
     storedToken = result.rows[0]?.present === true;
   }
-  return integrationSetup(process.env, storedToken);
+  const state = process.env.DATABASE_URL ? await readState() : undefined;
+  const config = state?.quickbooks ? configuredQBO(state) : undefined;
+  return integrationSetup(
+    config
+      ? {
+          ...process.env,
+          QBO_REALM_ID: config.realm,
+          QBO_PARENT_CC_ACCOUNT_ID: config.parentAccountId,
+          QBO_CARD_ACCOUNT_IDS: config.accountIds.join(","),
+        }
+      : process.env,
+    storedToken,
+  );
 }
 
 async function requireIntegrationSetup(operation: "sync" | "directory") {

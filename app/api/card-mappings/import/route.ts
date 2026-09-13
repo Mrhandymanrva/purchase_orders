@@ -54,7 +54,7 @@ export async function POST(req: Request) {
       state,
       rows,
       reason,
-      process.env.QBO_PARENT_CC_ACCOUNT_ID,
+      state.quickbooks?.parentAccountId || process.env.QBO_PARENT_CC_ACCOUNT_ID,
     );
     const receipt = {
       revision: state.revision,
@@ -100,7 +100,7 @@ export async function PUT(req: Request) {
         s,
         receipt.rows,
         receipt.reason,
-        process.env.QBO_PARENT_CC_ACCOUNT_ID,
+        s.quickbooks?.parentAccountId || process.env.QBO_PARENT_CC_ACCOUNT_ID,
       );
       if (plan.errors.length)
         throw Error(

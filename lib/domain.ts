@@ -139,8 +139,27 @@ export type State = {
   cardAssignments?: Record<string, string>;
   cardMappings?: CardMapping[];
   directory?: Directory;
+  quickbooks?: QuickBooksSettings;
   vanStockTypeIds?: string[];
   coverage?: { chargesFrom: string; posFrom: string; through: string };
+};
+export type QuickBooksAccount = {
+  id: string;
+  name: string;
+  active: boolean;
+  parentId?: string;
+  subAccount: boolean;
+};
+export type QuickBooksSettings = {
+  realm: string;
+  companyName: string;
+  environment: "production" | "sandbox";
+  clientFingerprint: string;
+  connectedAt: string;
+  accounts: QuickBooksAccount[];
+  discoveredAt?: string;
+  parentAccountId?: string;
+  accountIds: string[];
 };
 export type Directory = {
   accounts: { id: string; name: string; active: boolean; parentId?: string }[];

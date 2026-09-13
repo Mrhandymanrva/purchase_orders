@@ -94,8 +94,11 @@ export function applyAction(
     if (!accountOptions(state).some((a) => a.id === data.accountId))
       throw Error("Select a subaccount from imported card purchases");
     if (
-      process.env.QBO_PARENT_CC_ACCOUNT_ID &&
-      data.accountId === process.env.QBO_PARENT_CC_ACCOUNT_ID
+      (state.quickbooks?.parentAccountId ||
+        process.env.QBO_PARENT_CC_ACCOUNT_ID) &&
+      data.accountId ===
+        (state.quickbooks?.parentAccountId ||
+          process.env.QBO_PARENT_CC_ACCOUNT_ID)
     )
       throw Error(
         "The parent credit-card account cannot be assigned to one person",

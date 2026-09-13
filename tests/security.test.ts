@@ -15,6 +15,7 @@ test("public legal pages allow anonymous reading while workspace and API routes 
       "/privacy-policy",
       "/privacy-policy?source=footer",
       "/api/health",
+      "/api/integrations/quickbooks/callback",
     ]) {
       const response = await middleware(
         new NextRequest(`https://app.example${path}`),
@@ -36,6 +37,9 @@ test("public legal pages allow anonymous reading while workspace and API routes 
       "/api/state",
       "/api/actions",
       "/api/integrations/status",
+      "/api/integrations/quickbooks/connect",
+      "/api/integrations/quickbooks/accounts",
+      "/api/integrations/quickbooks/callback/extra",
       "/api/report",
       "/api/card-mappings/export",
       "/eula/private",

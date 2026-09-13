@@ -139,8 +139,15 @@ export class IntegrationSetupError extends Error {
       .flatMap((s) => s.checks)
       .filter((c) => !c.configured && (operation === "sync" || !c.syncOnly))
       .map((c) => c.setting);
+    const managed = [
+      "QBO_REALM_ID",
+      "QBO_REFRESH_TOKEN",
+      "QBO_CARD_ACCOUNT_IDS",
+      "QBO_PARENT_CC_ACCOUNT_ID or QBO_CARD_ACCOUNT_IDS",
+    ];
+    const variables = missing.filter((key) => !managed.includes(key));
     super(
-      `Integration setup incomplete. Add or correct these Railway variables: ${missing.join(", ")}. Open Integrations for the setup checklist. Enter secrets in Railway only.`,
+      `Integration setup incomplete. ${variables.length ? `Add or correct these Railway variables: ${variables.join(", ")}. ` : ""}${missing.some((key) => managed.includes(key)) ? "Use Connect QuickBooks and select the card accounts in Integrations. " : ""}Open Integrations for the setup checklist. Enter secrets in Railway only.`,
     );
     this.name = "IntegrationSetupError";
   }

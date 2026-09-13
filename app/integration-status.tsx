@@ -2,7 +2,11 @@
 import { useEffect, useState } from "react";
 import type { IntegrationSetup } from "@/lib/integration-setup";
 
-export default function IntegrationStatus() {
+export default function IntegrationStatus({
+  revision = 0,
+}: {
+  revision?: number;
+}) {
   const [setup, setSetup] = useState<IntegrationSetup | null>(null);
   const [demo, setDemo] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -27,7 +31,7 @@ export default function IntegrationStatus() {
   }
   useEffect(() => {
     void refresh();
-  }, []);
+  }, [revision]);
   return (
     <>
       <section className="panel account-mappings">
@@ -57,9 +61,9 @@ export default function IntegrationStatus() {
         {!demo && (
           <p>
             Enter production credentials in Railway → purchase_orders →
-            Variables, then deploy the changes. QuickBooks needs an authorized
-            company ID and OAuth refresh token in addition to the Intuit app
-            credentials. A stored token satisfies the initial token requirement.
+            Variables, then deploy the changes. Use Connect QuickBooks above to
+            authorize your company and select its card accounts. The company ID,
+            authorization token and selected card IDs are saved automatically.
             Settings marked present have not necessarily been accepted by the
             source API.
           </p>
@@ -74,7 +78,18 @@ export default function IntegrationStatus() {
               <li key={check.setting}>
                 <div>
                   <strong>{check.label}</strong>
-                  <code>{check.setting}</code>
+                  {[
+                    "QBO_REALM_ID",
+                    "QBO_REFRESH_TOKEN",
+                    "QBO_CARD_ACCOUNT_IDS",
+                    "QBO_PARENT_CC_ACCOUNT_ID or QBO_CARD_ACCOUNT_IDS",
+                  ].includes(check.setting) ? (
+                    <small>
+                      Managed by Connect QuickBooks and card selection above
+                    </small>
+                  ) : (
+                    <code>{check.setting}</code>
+                  )}
                   {check.syncOnly && <small>Needed for purchase sync</small>}
                 </div>
                 <span

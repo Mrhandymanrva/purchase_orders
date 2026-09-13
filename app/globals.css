@@ -621,6 +621,53 @@ footer {
 .setup-missing {
   color: #8a5416;
 }
+.qbo-onboarding > button {
+  margin-right: 10px;
+}
+.qbo-onboarding details {
+  padding: 16px 0;
+}
+.callback-address {
+  display: block;
+  padding: 12px;
+  background: #f4f7f5;
+  overflow-wrap: anywhere;
+}
+.qbo-card-picker {
+  border-top: 1px solid #e0e7e2;
+  margin-top: 20px;
+}
+.qbo-picker-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.qbo-card-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 8px;
+  max-height: 380px;
+  overflow-y: auto;
+}
+.qbo-card-list label {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid #e0e7e2;
+  border-radius: 6px;
+  font-size: 14px;
+}
+.qbo-card-list input {
+  margin-top: 2px;
+}
+.qbo-card-list small {
+  display: block;
+  margin-top: 4px;
+  color: #637366;
+}
 .field {
   display: flex;
   flex-direction: column;
