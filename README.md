@@ -22,6 +22,10 @@ Open http://127.0.0.1:3000. The sample uses a fixed as-of date of September 13, 
 
 ## Main workflow and individual reporting
 
+### Public policy pages
+
+The deployment exposes **EULA** at `/eula` and **Privacy Policy** at `/privacy-policy`, with clearly labeled app-footer links and navigation between the pages. These two informational routes are readable without login; the workspace and financial-data APIs still require authentication. The operator is **Mr. Handyman of Richmond**. Policy identity/date/contact settings are in `lib/legal.ts`; when no contact email is specified, inquiries are directed to the workspace administrator through the usual company support channel. The pages do not collect click-through acceptance or create consent audit records.
+
 1. Use **Card user filter** to select an individual or Unassigned. KPI totals follow the person and date range; status and search filters narrow the table. Variance is the full reconciliation-group difference, not a personal liability allocation.
 2. Open a vendor row. The detail panel shows the card user → PO link, source records, score evidence, and remaining difference. Confidence is a policy score, not a statistical probability.
 3. In **Card assignments**, edit all mappings in one grid using QuickBooks subaccount and ServiceTitan person dropdowns, effective dates, and a reason. Save each changed row. Source IDs distinguish duplicate account and employee names. Per-charge manual corrections take precedence, then dated subaccount assignments, then imported ownership, then Unassigned. Reconciled POs follow their actual card users.

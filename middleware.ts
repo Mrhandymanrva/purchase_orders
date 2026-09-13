@@ -1,6 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 export async function middleware(req: NextRequest) {
-  if (req.nextUrl.pathname === "/api/health") return NextResponse.next();
+  if (
+    ["/api/health", "/eula", "/privacy-policy"].includes(req.nextUrl.pathname)
+  )
+    return NextResponse.next();
   if (process.env.DEMO_MODE === "true" && process.env.NODE_ENV !== "production")
     return NextResponse.next();
   const user = process.env.APP_USER,

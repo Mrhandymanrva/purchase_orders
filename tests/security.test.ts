@@ -1,6 +1,57 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { authorize, checkOrigin } from "../lib/auth";
+import { NextRequest } from "next/server";
+import { middleware } from "../middleware";
+
+test("public legal pages allow anonymous reading while workspace and API routes remain protected", async () => {
+  const old = { ...process.env };
+  try {
+    Object.assign(process.env, { NODE_ENV: "production", DEMO_MODE: "false" });
+    delete process.env.APP_USER;
+    delete process.env.APP_PASSWORD;
+    for (const path of [
+      "/eula",
+      "/privacy-policy",
+      "/privacy-policy?source=footer",
+      "/api/health",
+    ]) {
+      const response = await middleware(
+        new NextRequest(`https://app.example${path}`),
+      );
+      assert.equal(response.headers.get("x-middleware-next"), "1", path);
+      assert.equal(response.headers.get("www-authenticate"), null);
+    }
+    assert.equal(
+      (await middleware(new NextRequest("https://app.example/api/state")))
+        .status,
+      503,
+    );
+    Object.assign(process.env, {
+      APP_USER: "operator",
+      APP_PASSWORD: "long-random-test-password-only",
+    });
+    for (const path of [
+      "/",
+      "/api/state",
+      "/api/actions",
+      "/api/report",
+      "/api/card-mappings/export",
+      "/eula/private",
+      "/privacy-policy-extra",
+    ]) {
+      const response = await middleware(
+        new NextRequest(`https://app.example${path}`),
+      );
+      assert.equal(response.status, 401, path);
+      assert.ok(response.headers.get("www-authenticate"));
+    }
+  } finally {
+    for (const key of Object.keys(process.env))
+      if (!(key in old)) delete process.env[key];
+    Object.assign(process.env, old);
+  }
+});
 test("production requires credentials even when DEMO_MODE is accidentally true", () => {
   const old = { ...process.env };
   try {

@@ -1163,6 +1163,130 @@ footer,
   overflow-y: auto;
   padding-right: 8px;
 }
+.legal-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  margin: 0;
+  overflow: visible;
+}
+.legal-links a,
+.legal-document a,
+.legal-footer a {
+  color: #215743;
+  text-underline-offset: 4px;
+}
+.app-legal-footer {
+  border-top: 1px solid #e1e7e4;
+  padding: 22px 36px;
+  background: #fff;
+}
+.legal-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.legal-header {
+  height: auto;
+  min-height: 80px;
+  padding: 22px max(24px, calc((100% - 920px) / 2));
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+.legal-brand {
+  color: #1d4037;
+  font-size: 20px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.legal-main {
+  margin: 36px auto;
+  width: min(920px, calc(100% - 32px));
+  flex: 1;
+}
+.legal-document {
+  background: #fff;
+  border: 1px solid #e1e7e4;
+  border-radius: 14px;
+  padding: clamp(24px, 5vw, 60px);
+  font-size: 16px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.legal-document h1 {
+  font-size: clamp(32px, 6vw, 44px);
+  line-height: 1.15;
+  margin: 16px 0 12px;
+}
+.legal-document h2 {
+  font-size: 21px;
+  line-height: 1.4;
+  margin: 0 0 14px;
+}
+.legal-document section {
+  margin-top: 32px;
+  scroll-margin-top: 24px;
+}
+.legal-document p,
+.legal-document li {
+  color: #46594f;
+  line-height: 1.75;
+}
+.legal-document p {
+  margin: 0 0 16px;
+}
+.legal-document ul {
+  padding-left: 24px;
+}
+.legal-document li {
+  margin-bottom: 12px;
+}
+.legal-document .legal-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.6px;
+  color: #537560;
+}
+.legal-document .legal-subtitle {
+  font-size: 18px;
+  margin-bottom: 8px;
+}
+.legal-document .legal-date {
+  font-size: 13px;
+  color: #67796e;
+  margin-bottom: 24px;
+}
+.legal-intro {
+  border-top: 1px solid #e1e7e4;
+  padding-top: 24px;
+}
+.legal-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 24px max(24px, calc((100% - 920px) / 2));
+  border-top: 1px solid #e1e7e4;
+  background: #fff;
+  font-size: 13px;
+  color: #67796e;
+}
+@media print {
+  .legal-header,
+  .legal-footer {
+    display: none;
+  }
+  .legal-main {
+    width: 100%;
+    margin: 0;
+  }
+  .legal-document {
+    border: 0;
+    padding: 0;
+  }
+}
 .account-map-layout form > button {
   margin-right: 8px;
   margin-bottom: 8px;

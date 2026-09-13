@@ -22,6 +22,7 @@ import { reconcile } from "@/lib/engine";
 import { cardUsers, ownershipLabel, filterResults } from "@/lib/report";
 import CardMappings from "./card-mappings";
 import TechnicianScorecard from "./scorecard";
+import LegalLinks from "./legal-links";
 export default function Page() {
   const [individual, setIndividual] = useState("All individuals"),
     [loaded, setLoaded] = useState(false);
@@ -122,6 +123,7 @@ export default function Page() {
       <main className="loading-page">
         <h1>Richmond reconciliation</h1>
         <p role="status">{message || "Loading your workspace…"}</p>
+        <LegalLinks />
         {message && (
           <button onClick={() => window.location.reload()}>Retry</button>
         )}
@@ -751,6 +753,9 @@ export default function Page() {
               )}
             </section>
           )}
+        </div>
+        <div className="app-legal-footer">
+          <LegalLinks />
         </div>
       </main>
       {active && (
