@@ -12,6 +12,7 @@ import { appendAudit } from "./store";
 import { suggestRules } from "./suggestions";
 import { applyOwnership } from "./ownership";
 import { resolvePerson, accountOptions } from "./directory";
+import { ServiceTitanSetupError } from "./servicetitan-settings";
 const ruleSchema = z
   .object({
     type: z.enum(["alias", "no-po"]),
@@ -25,6 +26,16 @@ const ruleSchema = z
     "Canonical vendor is required",
   );
 export const actionSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("discover-st-business-units"),
+    revision: z.number().int(),
+  }),
+  z.object({
+    type: z.literal("save-st-business-units"),
+    revision: z.number().int(),
+    businessUnitIds: z.array(z.string().trim().min(1)).min(1).max(50),
+    reason: z.string().trim().min(5).max(500),
+  }),
   z.object({
     type: z.literal("refresh-directory"),
     revision: z.number().int(),
@@ -80,11 +91,71 @@ export function applyAction(
   snapshot?: RecordItem[],
   directory?: Directory,
   coverage?: State["coverage"],
+  stBusinessUnits?: State["serviceTitan"],
 ) {
   const asOf =
     state.mode === "demo"
       ? "2026-09-13"
       : new Date().toISOString().slice(0, 10);
+  if (action.type === "discover-st-business-units") {
+    if (state.mode === "live" && !stBusinessUnits)
+      throw new ServiceTitanSetupError(
+        "ServiceTitan business units could not be loaded.",
+      );
+    if (stBusinessUnits) {
+      const saved = state.serviceTitan;
+      if (
+        saved &&
+        (saved.tenantId !== stBusinessUnits.tenantId ||
+          saved.environment !== stBusinessUnits.environment)
+      )
+        throw new ServiceTitanSetupError(
+          "ServiceTitan connection changed. Restore the original tenant and environment.",
+        );
+      state.serviceTitan = {
+        ...stBusinessUnits,
+        ...(saved?.businessUnitIds
+          ? { businessUnitIds: saved.businessUnitIds }
+          : {}),
+      };
+    }
+    appendAudit(state, actor, "ServiceTitan business units loaded", {
+      count: state.serviceTitan?.businessUnits.length || 0,
+      environment: state.serviceTitan?.environment,
+      tenantId: state.serviceTitan?.tenantId,
+    });
+  }
+  if (action.type === "save-st-business-units") {
+    const st = state.serviceTitan;
+    if (!st?.discoveredAt)
+      throw new ServiceTitanSetupError(
+        "Load ServiceTitan business units before choosing the PO import scope.",
+      );
+    const ids = [...new Set(action.businessUnitIds)].sort();
+    if (
+      !ids.length ||
+      ids.length !== action.businessUnitIds.length ||
+      ids.some(
+        (id) => !st.businessUnits.some((unit) => unit.id === id && unit.active),
+      )
+    )
+      throw new ServiceTitanSetupError(
+        "Choose at least one active ServiceTitan business unit from the list, without duplicates.",
+      );
+    const before = st.businessUnitIds || [];
+    st.businessUnitIds = ids;
+    appendAudit(state, actor, "ServiceTitan PO import scope saved", {
+      before,
+      after: ids.map((id) => ({
+        id,
+        name: st.businessUnits.find((unit) => unit.id === id)!.name,
+      })),
+      tenantId: st.tenantId,
+      environment: st.environment,
+      reason: action.reason,
+      appliesOnNextSync: true,
+    });
+  }
   if (action.type === "save-card-mapping") {
     const data = cardMappingSchema.parse(action.mapping);
     const before = data.id

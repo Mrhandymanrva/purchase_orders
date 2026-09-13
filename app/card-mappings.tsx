@@ -111,8 +111,19 @@ function MappingRow({
               {draft.person.slice(5)} · imported name
             </option>
           )}
+          {draft.person &&
+            !draft.person.startsWith("name:") &&
+            !people.some((p) => p.id === draft.person) && (
+              <option value={draft.person}>
+                {initial.cardUser} · historical assignment ({draft.person})
+              </option>
+            )}
           {people
             .filter((p) => p.active || p.id === draft.person)
+            .sort(
+              (a, b) =>
+                a.name.localeCompare(b.name) || a.id.localeCompare(b.id),
+            )
             .map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name} · {p.kind} #{p.sourceId}
@@ -229,18 +240,19 @@ export default function CardMappings({
         user. Save each changed row. End an earlier assignment before
         reassigning the card; historical periods remain visible.
       </p>
-      {!state.directory && (
+      {!state.directory?.people.length && (
         <p className="notice">
-          Refresh dropdowns to load ServiceTitan people and QuickBooks
-          subaccounts. Existing spreadsheet mappings remain editable.
+          ServiceTitan people have not loaded. Click Refresh ST / QB dropdowns
+          above to load the people list. Existing spreadsheet mappings remain
+          editable.
         </p>
       )}
       {state.directory && (
         <p className="muted">
           {state.mode === "demo" ? "Sample directories" : "Source directories"}{" "}
-          · {state.directory.people.length} people ·{" "}
-          {state.directory.accounts.length} card subaccounts · refreshed{" "}
-          {new Date(state.directory.syncedAt).toLocaleString()}
+          · {state.directory.people.filter((p) => p.active).length} active
+          people · {state.directory.accounts.length} card subaccounts ·
+          refreshed {new Date(state.directory.syncedAt).toLocaleString()}
         </p>
       )}
       <div className="mapping-grid table-scroll">

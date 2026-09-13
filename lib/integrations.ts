@@ -17,6 +17,7 @@ import { required, getJSON } from "./integration-transport";
 export { getJSON } from "./integration-transport";
 export { encryptToken, decryptToken } from "./token-crypto";
 import { integrationSetup, IntegrationSetupError } from "./integration-setup";
+import { configuredST, ServiceTitanSetupError } from "./servicetitan-settings";
 type Fetcher = typeof fetch;
 const sourceId = z
   .union([z.string().min(1), z.number().int().safe()])
@@ -191,7 +192,8 @@ async function readSTPages(
     | "purchase-orders"
     | "purchase-order-types"
     | "technicians"
-    | "employees",
+    | "employees"
+    | "business-units",
   token: string,
   fetcher: Fetcher,
 ) {
@@ -203,7 +205,7 @@ async function readSTPages(
   const records: unknown[] = [];
   for (let page = 1; page <= 100; page++) {
     const data = await getJSON(
-      `${base}/${["technicians", "employees"].includes(kind) ? "settings" : "inventory"}/v2/tenant/${encodeURIComponent(tenant)}/${kind}?page=${page}&pageSize=200&includeTotal=true${kind === "purchase-orders" ? "" : "&active=Any"}`,
+      `${base}/${["technicians", "employees", "business-units"].includes(kind) ? "settings" : "inventory"}/v2/tenant/${encodeURIComponent(tenant)}/${kind}?page=${page}&pageSize=200&includeTotal=true${kind === "purchase-orders" ? "" : ["technicians", "employees"].includes(kind) ? "&active=True" : "&active=Any"}`,
       {
         Authorization: `Bearer ${token}`,
         "ST-App-Key": required("ST_APP_KEY"),
@@ -223,7 +225,13 @@ export async function readST(
   from: string,
   to: string,
   fetcher: Fetcher = fetch,
+  selectedUnits?: string[],
 ) {
+  const units = selectedUnits ?? configuredST().businessUnitIds;
+  if (!units.length)
+    throw new ServiceTitanSetupError(
+      "Choose the ServiceTitan business units to import in Integrations.",
+    );
   const vendorRows = await readSTPages("vendors", token, fetcher);
   const vendors = new Map(
     vendorRows.map((raw) => {
@@ -232,9 +240,6 @@ export async function readST(
     }),
   );
   const rows = await readSTPages("purchase-orders", token, fetcher);
-  const units = required("ST_BUSINESS_UNIT_IDS")
-    .split(",")
-    .map((s) => s.trim());
   return rows.flatMap((raw) => {
     const p = stSchema.parse(raw);
     if (
@@ -271,6 +276,9 @@ async function serviceTitanToken(fetcher: Fetcher) {
 }
 export async function fetchSnapshot(fetcher: Fetcher = fetch) {
   await requireIntegrationSetup("sync");
+  const stScope = configuredST(
+    process.env.DATABASE_URL ? await readState() : undefined,
+  );
   const from = required("SYNC_FROM");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || Number.isNaN(Date.parse(from)))
     throw Error("Integration SYNC_FROM must be YYYY-MM-DD");
@@ -282,7 +290,7 @@ export async function fetchSnapshot(fetcher: Fetcher = fetch) {
   const stToken = await serviceTitanToken(fetcher),
     qbo = await qboSession(fetcher);
   const [pos, charges, directory] = await Promise.all([
-    readST(stToken, stFrom, to, fetcher),
+    readST(stToken, stFrom, to, fetcher, stScope.businessUnitIds),
     readQBO(qbo.accessToken, qbo.realm, from, to, fetcher, qbo.accountIds),
     readDirectories(stToken, qbo.accessToken, qbo.realm, fetcher, qbo),
   ]);
@@ -324,6 +332,41 @@ export async function readQBAccounts(
       : accounts.filter((a) => a.subAccount && ids.includes(a.id))
   ).map(({ subAccount, ...a }) => a);
 }
+export class IntegrationDirectoryError extends Error {
+  name = "IntegrationDirectoryError";
+}
+export function mapSTPeople(rows: unknown[], kind: "technician" | "employee") {
+  const schema = z.object({
+    id: sourceId,
+    name: z.unknown().optional(),
+    active: z.boolean(),
+  });
+  const people: Directory["people"] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const person = schema.parse(row);
+    if (seen.has(person.id))
+      throw new IntegrationDirectoryError(
+        `ServiceTitan returned duplicate ${kind} IDs. The previous dropdowns were kept; retry the refresh.`,
+      );
+    seen.add(person.id);
+    if (!person.active) continue;
+    const parsedName = z.string().trim().min(1).safeParse(person.name);
+    if (!parsedName.success)
+      throw new IntegrationDirectoryError(
+        `Active ServiceTitan ${kind} #${person.id} has no usable name. Add its name in ServiceTitan, then refresh the dropdowns.`,
+      );
+    const name = parsedName.data;
+    people.push({
+      id: `${kind}:${person.id}`,
+      sourceId: person.id,
+      name,
+      active: person.active,
+      kind,
+    });
+  }
+  return people;
+}
 export async function readDirectories(
   stToken: string,
   qboToken: string,
@@ -342,20 +385,21 @@ export async function readDirectories(
     name: z.string().min(1),
     active: z.boolean(),
   });
-  const people = [
-    ...techs.map((r) => ({ ...schema.parse(r), kind: "technician" as const })),
-    ...employees.map((r) => ({
-      ...schema.parse(r),
-      kind: "employee" as const,
-    })),
-  ].map((p) => ({ ...p, sourceId: p.id, id: `${p.kind}:${p.id}` }));
+  const technicians = mapSTPeople(techs, "technician");
+  const staff = mapSTPeople(employees, "employee");
+  const people = [...technicians, ...staff];
   const poTypes = types.map((r) => schema.parse(r));
   if (
     new Set(people.map((p) => p.id)).size !== people.length ||
     new Set(poTypes.map((p) => p.id)).size !== poTypes.length
   )
     throw Error("Integration duplicate ServiceTitan directory IDs");
-  return { people, accounts, poTypes, syncedAt: new Date().toISOString() };
+  return {
+    people,
+    accounts,
+    poTypes,
+    syncedAt: new Date().toISOString(),
+  };
 }
 export async function fetchDirectories(fetcher: Fetcher = fetch) {
   await requireIntegrationSetup("directory");
@@ -364,6 +408,34 @@ export async function fetchDirectories(fetcher: Fetcher = fetch) {
     qboSession(fetcher),
   ]);
   return readDirectories(st, qbo.accessToken, qbo.realm, fetcher, qbo);
+}
+
+export async function fetchSTBusinessUnits(
+  fetcher: Fetcher = fetch,
+): Promise<NonNullable<State["serviceTitan"]>> {
+  const { tenantId, environment } = configuredST();
+  required("ST_TENANT_ID");
+  required("ST_APP_KEY");
+  const token = await serviceTitanToken(fetcher);
+  const rows = await readSTPages("business-units", token, fetcher);
+  const schema = z.object({
+    id: sourceId,
+    name: z.string().trim().min(1),
+    active: z.boolean(),
+  });
+  const businessUnits = rows.map((row) => schema.parse(row));
+  if (
+    new Set(businessUnits.map((unit) => unit.id)).size !== businessUnits.length
+  )
+    throw new ServiceTitanSetupError(
+      "ServiceTitan returned duplicate business unit IDs. Retry loading business units.",
+    );
+  return {
+    tenantId,
+    environment,
+    businessUnits,
+    discoveredAt: new Date().toISOString(),
+  };
 }
 
 export async function readIntegrationSetup() {
@@ -376,15 +448,19 @@ export async function readIntegrationSetup() {
   }
   const state = process.env.DATABASE_URL ? await readState() : undefined;
   const config = state?.quickbooks ? configuredQBO(state) : undefined;
+  const st = state?.serviceTitan ? configuredST(state) : undefined;
   return integrationSetup(
-    config
-      ? {
-          ...process.env,
-          QBO_REALM_ID: config.realm,
-          QBO_PARENT_CC_ACCOUNT_ID: config.parentAccountId,
-          QBO_CARD_ACCOUNT_IDS: config.accountIds.join(","),
-        }
-      : process.env,
+    {
+      ...process.env,
+      ...(config
+        ? {
+            QBO_REALM_ID: config.realm,
+            QBO_PARENT_CC_ACCOUNT_ID: config.parentAccountId,
+            QBO_CARD_ACCOUNT_IDS: config.accountIds.join(","),
+          }
+        : {}),
+      ...(st ? { ST_BUSINESS_UNIT_IDS: st.businessUnitIds.join(",") } : {}),
+    },
     storedToken,
   );
 }

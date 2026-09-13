@@ -64,6 +64,7 @@ export default function IntegrationStatus({
             Variables, then deploy the changes. Use Connect QuickBooks above to
             authorize your company and select its card accounts. The company ID,
             authorization token and selected card IDs are saved automatically.
+            Choose the ServiceTitan PO import scope by business unit name above.
             Settings marked present have not necessarily been accepted by the
             source API.
           </p>
@@ -87,6 +88,8 @@ export default function IntegrationStatus({
                     <small>
                       Managed by Connect QuickBooks and card selection above
                     </small>
+                  ) : check.setting === "ST_BUSINESS_UNIT_IDS" ? (
+                    <small>Managed by ServiceTitan PO import scope above</small>
                   ) : (
                     <code>{check.setting}</code>
                   )}

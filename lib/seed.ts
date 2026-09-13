@@ -54,6 +54,16 @@ export function seed(): State {
       through: "2026-09-13",
     },
     vanStockTypeIds: ["demo-van-stock"],
+    serviceTitan: {
+      tenantId: "demo-tenant",
+      environment: "integration",
+      discoveredAt: "2026-09-13T12:00:00Z",
+      businessUnitIds: ["demo-richmond"],
+      businessUnits: [
+        { id: "demo-richmond", name: "Richmond", active: true },
+        { id: "demo-hampton", name: "Hampton", active: true },
+      ],
+    },
     directory: {
       syncedAt: "2026-09-13T12:00:00Z",
       accounts: [

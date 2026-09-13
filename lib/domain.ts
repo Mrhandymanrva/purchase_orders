@@ -140,8 +140,16 @@ export type State = {
   cardMappings?: CardMapping[];
   directory?: Directory;
   quickbooks?: QuickBooksSettings;
+  serviceTitan?: ServiceTitanSettings;
   vanStockTypeIds?: string[];
   coverage?: { chargesFrom: string; posFrom: string; through: string };
+};
+export type ServiceTitanSettings = {
+  tenantId: string;
+  environment: "production" | "integration";
+  businessUnits: { id: string; name: string; active: boolean }[];
+  discoveredAt: string;
+  businessUnitIds?: string[];
 };
 export type QuickBooksAccount = {
   id: string;

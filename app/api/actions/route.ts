@@ -1,7 +1,16 @@
 import { actionSchema, applyAction } from "@/lib/actions";
 import { changeState, Conflict, readState } from "@/lib/store";
 import { authorize, checkOrigin } from "@/lib/auth";
-import { fetchSnapshot, fetchDirectories } from "@/lib/integrations";
+import {
+  fetchSnapshot,
+  fetchDirectories,
+  fetchSTBusinessUnits,
+  IntegrationDirectoryError,
+} from "@/lib/integrations";
+import {
+  configuredST,
+  ServiceTitanSetupError,
+} from "@/lib/servicetitan-settings";
 import { IntegrationSetupError } from "@/lib/integration-setup";
 import { QuickBooksError } from "@/lib/quickbooks";
 export const runtime = "nodejs";
@@ -37,11 +46,21 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     const action = parsed.data;
-    const current = ["sync", "refresh-directory"].includes(action.type)
+    const current = [
+      "sync",
+      "refresh-directory",
+      "discover-st-business-units",
+      "save-st-business-units",
+    ].includes(action.type)
       ? await readState()
       : undefined;
     if (current && current.revision !== action.revision)
       throw new Conflict("Workspace changed. Refresh the page and retry.");
+    if (current?.mode === "live" && current.serviceTitan) configuredST(current);
+    const stBusinessUnits =
+      action.type === "discover-st-business-units" && current?.mode === "live"
+        ? await fetchSTBusinessUnits()
+        : undefined;
     const snapshot =
       action.type === "sync" && current?.mode === "live"
         ? await fetchSnapshot()
@@ -58,6 +77,7 @@ export async function POST(req: Request) {
         snapshot?.records,
         directory,
         snapshot?.coverage,
+        stBusinessUnits,
       ),
     );
     return Response.json(state, { headers: { "Cache-Control": "no-store" } });
@@ -69,6 +89,8 @@ export async function POST(req: Request) {
         error:
           e instanceof Conflict ||
           e instanceof IntegrationSetupError ||
+          e instanceof IntegrationDirectoryError ||
+          e instanceof ServiceTitanSetupError ||
           e instanceof QuickBooksError
             ? message
             : message.startsWith("Integration")

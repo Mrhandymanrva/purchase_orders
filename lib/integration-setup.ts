@@ -57,7 +57,7 @@ export function integrationSetup(
         check("ST_CLIENT_SECRET", "Client secret"),
         check("ST_APP_KEY", "Application key"),
         {
-          ...check("ST_BUSINESS_UNIT_IDS", "Richmond business unit IDs", true),
+          ...check("ST_BUSINESS_UNIT_IDS", "PO import business units", true),
           configured: ids("ST_BUSINESS_UNIT_IDS"),
         },
       ],
@@ -145,9 +145,11 @@ export class IntegrationSetupError extends Error {
       "QBO_CARD_ACCOUNT_IDS",
       "QBO_PARENT_CC_ACCOUNT_ID or QBO_CARD_ACCOUNT_IDS",
     ];
-    const variables = missing.filter((key) => !managed.includes(key));
+    const variables = missing.filter(
+      (key) => !managed.includes(key) && key !== "ST_BUSINESS_UNIT_IDS",
+    );
     super(
-      `Integration setup incomplete. ${variables.length ? `Add or correct these Railway variables: ${variables.join(", ")}. ` : ""}${missing.some((key) => managed.includes(key)) ? "Use Connect QuickBooks and select the card accounts in Integrations. " : ""}Open Integrations for the setup checklist. Enter secrets in Railway only.`,
+      `Integration setup incomplete. ${variables.length ? `Add or correct these Railway variables: ${variables.join(", ")}. ` : ""}${missing.includes("ST_BUSINESS_UNIT_IDS") ? "Choose the ServiceTitan business units by name in Integrations. " : ""}${missing.some((key) => managed.includes(key)) ? "Use Connect QuickBooks and select the card accounts in Integrations. " : ""}Open Integrations for the setup checklist.${variables.length ? " Enter secrets in Railway only." : ""}`,
     );
     this.name = "IntegrationSetupError";
   }

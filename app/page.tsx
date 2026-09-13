@@ -25,6 +25,7 @@ import TechnicianScorecard from "./scorecard";
 import LegalLinks from "./legal-links";
 import IntegrationStatus from "./integration-status";
 import QuickBooksConnection from "./quickbooks-connection";
+import ServiceTitanConnection from "./servicetitan-connection";
 export default function Page() {
   const [individual, setIndividual] = useState("All individuals"),
     [loaded, setLoaded] = useState(false);
@@ -697,6 +698,7 @@ export default function Page() {
           {tab === "Integrations" && (
             <div className="settings-grid">
               <QuickBooksConnection state={state} onChanged={setState} />
+              <ServiceTitanConnection state={state} onChanged={setState} />
               <IntegrationStatus revision={state.revision} />
               <section className="panel account-mappings">
                 <h2>People, cards and scorecards</h2>
