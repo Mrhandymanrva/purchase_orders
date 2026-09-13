@@ -2,10 +2,11 @@ import { z } from "zod";
 import { recordSchema, type RecordItem, type Directory } from "./domain";
 import { pool } from "./store";
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { integrationSetup, IntegrationSetupError } from "./integration-setup";
 type Fetcher = typeof fetch;
 const required = (key: string) => {
   const v = process.env[key];
-  if (!v) throw Error(`Integration configuration missing: ${key}`);
+  if (!v?.trim()) throw Error(`Integration configuration missing: ${key}`);
   return v;
 };
 const sourceId = z
@@ -394,6 +395,7 @@ async function quickBooksToken(fetcher: Fetcher) {
   }
 }
 export async function fetchSnapshot(fetcher: Fetcher = fetch) {
+  await requireIntegrationSetup("sync");
   const from = required("SYNC_FROM");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || Number.isNaN(Date.parse(from)))
     throw Error("Integration SYNC_FROM must be YYYY-MM-DD");
@@ -459,7 +461,10 @@ export async function readQBAccounts(
     if (rows.length < 1000) {
       const parent = process.env.QBO_PARENT_CC_ACCOUNT_ID,
         allow = new Set(
-          required("QBO_CARD_ACCOUNT_IDS")
+          (
+            process.env.QBO_CARD_ACCOUNT_IDS ||
+            (parent ? "" : required("QBO_CARD_ACCOUNT_IDS"))
+          )
             .split(",")
             .map((v) => v.trim()),
         );
@@ -527,9 +532,28 @@ export async function readDirectories(
   return { people, accounts, poTypes, syncedAt: new Date().toISOString() };
 }
 export async function fetchDirectories(fetcher: Fetcher = fetch) {
+  await requireIntegrationSetup("directory");
   const [st, qbo] = await Promise.all([
     serviceTitanToken(fetcher),
     quickBooksToken(fetcher),
   ]);
   return readDirectories(st, qbo, required("QBO_REALM_ID"), fetcher);
+}
+
+export async function readIntegrationSetup() {
+  let storedToken = false;
+  if (!process.env.QBO_REFRESH_TOKEN?.trim() && process.env.DATABASE_URL) {
+    const result = await pool().query(
+      "SELECT EXISTS (SELECT 1 FROM oauth_tokens WHERE provider='qbo' AND payload IS NOT NULL) AS present",
+    );
+    storedToken = result.rows[0]?.present === true;
+  }
+  return integrationSetup(process.env, storedToken);
+}
+
+async function requireIntegrationSetup(operation: "sync" | "directory") {
+  const setup = await readIntegrationSetup();
+  if (!(operation === "sync" ? setup.syncReady : setup.directoryReady)) {
+    throw new IntegrationSetupError(setup, operation);
+  }
 }

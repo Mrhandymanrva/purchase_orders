@@ -23,6 +23,7 @@ import { cardUsers, ownershipLabel, filterResults } from "@/lib/report";
 import CardMappings from "./card-mappings";
 import TechnicianScorecard from "./scorecard";
 import LegalLinks from "./legal-links";
+import IntegrationStatus from "./integration-status";
 export default function Page() {
   const [individual, setIndividual] = useState("All individuals"),
     [loaded, setLoaded] = useState(false);
@@ -289,7 +290,9 @@ export default function Page() {
                 <span>
                   {state.lastSync
                     ? `Last run ${new Date(state.lastSync).toLocaleString()}`
-                    : "Seeded sample · September 2026"}
+                    : state.mode === "demo"
+                      ? "Seeded sample · September 2026"
+                      : "No successful sync yet"}
                 </span>
               </div>
               <section className="table-card">
@@ -679,6 +682,7 @@ export default function Page() {
           )}
           {tab === "Integrations" && (
             <div className="settings-grid">
+              <IntegrationStatus />
               <section className="panel account-mappings">
                 <h2>People, cards and scorecards</h2>
                 <p>
@@ -692,34 +696,19 @@ export default function Page() {
                   Open technician scorecards
                 </button>
               </section>
-              {["ServiceTitan", "QuickBooks Online"].map((name, i) => (
-                <section className="panel" key={name}>
-                  <div className={"integration-logo " + (i ? "qb" : "st")}>
-                    {i ? "qb" : "ST"}
-                  </div>
-                  <h2>{name}</h2>
-                  <span className="badge neutral">
-                    {state.mode === "demo"
-                      ? "Sample data"
-                      : "Live workspace · credentials managed on server"}
-                  </span>
-                  <p>
-                    {i
-                      ? "Reads posted Accounting API credit-card Purchases, including credits. Pending bank-feed items are outside this API."
-                      : "Reads inventory purchase orders and vendor names. No purchase orders are created or changed."}
-                  </p>
-                  <h3>Access boundary</h3>
-                  <p>
-                    Resource requests use GET only. Credentials stay on the
-                    server.
-                  </p>
-                  <p>
-                    {state.mode === "demo"
-                      ? "Configure the server environment and PostgreSQL to enable live synchronization."
-                      : "Use Sync & reconcile to fetch a complete bounded snapshot."}
-                  </p>
-                </section>
-              ))}
+              <section className="panel account-mappings">
+                <h2>Read-only access</h2>
+                <p>
+                  ServiceTitan supplies purchase orders, vendors and source
+                  directories. QuickBooks supplies posted Accounting API
+                  credit-card purchases and credits; pending bank-feed items are
+                  outside this API.
+                </p>
+                <p>
+                  Resource requests use GET only. Credentials stay on the
+                  server. A failed sync preserves the last imported snapshot.
+                </p>
+              </section>
             </div>
           )}
           {tab === "Audit log" && (

@@ -35,6 +35,7 @@ test("public legal pages allow anonymous reading while workspace and API routes 
       "/",
       "/api/state",
       "/api/actions",
+      "/api/integrations/status",
       "/api/report",
       "/api/card-mappings/export",
       "/eula/private",

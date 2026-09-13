@@ -587,6 +587,40 @@ footer {
 .panel > h2 {
   margin-top: 0;
 }
+.setup-checks {
+  list-style: none;
+  padding: 0;
+  margin-bottom: 0;
+}
+.setup-checks li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid #e0e7e2;
+  font-size: 13px;
+}
+.setup-checks li > div {
+  min-width: 0;
+}
+.setup-checks code,
+.setup-checks small {
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+  color: #637366;
+}
+.setup-checks li > span {
+  flex-shrink: 0;
+  align-self: flex-start;
+  font-weight: 600;
+}
+.setup-present {
+  color: #245443;
+}
+.setup-missing {
+  color: #8a5416;
+}
 .field {
   display: flex;
   flex-direction: column;

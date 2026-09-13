@@ -2,6 +2,7 @@ import { actionSchema, applyAction } from "@/lib/actions";
 import { changeState, Conflict, readState } from "@/lib/store";
 import { authorize, checkOrigin } from "@/lib/auth";
 import { fetchSnapshot, fetchDirectories } from "@/lib/integrations";
+import { IntegrationSetupError } from "@/lib/integration-setup";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
@@ -65,7 +66,7 @@ export async function POST(req: Request) {
     return Response.json(
       {
         error:
-          e instanceof Conflict
+          e instanceof Conflict || e instanceof IntegrationSetupError
             ? message
             : message.startsWith("Integration")
               ? "Integration sync failed; no source data was changed. Check server logs."
