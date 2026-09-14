@@ -641,6 +641,7 @@ export default function Page() {
                       config: {
                         ...state.config,
                         automationMode: f.get("automationMode"),
+                        maxGroup: 1,
                         ...Object.fromEntries(
                           [
                             "windowDays",
@@ -649,7 +650,6 @@ export default function Page() {
                             "toleranceCents",
                             "autoThreshold",
                             "ambiguityMargin",
-                            "maxGroup",
                           ].map((k) => [k, Number(f.get(k))]),
                         ),
                         weights: Object.fromEntries(
@@ -663,6 +663,17 @@ export default function Page() {
                   }}
                   key={state.revision}
                 >
+                  <p className="notice">
+                    <strong>
+                      {state.config.maxGroup === 1
+                        ? "One purchase ↔ one PO (1:1)"
+                        : "Apply one purchase ↔ one PO (1:1)"}
+                    </strong>
+                    <br />
+                    Under this policy, purchases and POs are never combined. A
+                    purchase with no eligible single PO remains unmatched.
+                    Saving applies 1:1 matching to existing imports.
+                  </p>
                   <label className="field">
                     Automation policy
                     <select
@@ -679,14 +690,18 @@ export default function Page() {
                   </label>
                   <p className="hint">
                     Match and flag automatically reconciles balanced matches at
-                    or above your threshold. Close alternatives, late POs,
-                    technician differences, and limited group searches remain
-                    visible as flags. Missing POs, amount differences,
-                    conflicting references, and possible duplicate charges still
-                    need attention.
+                    or above your threshold. Close alternatives, late POs, and
+                    technician differences remain visible as flags. Missing POs,
+                    amount differences, conflicting references, and possible
+                    duplicate charges still need attention.
                   </p>
                   {Object.entries(state.config)
-                    .filter(([k]) => k !== "weights" && k !== "automationMode")
+                    .filter(
+                      ([k]) =>
+                        k !== "weights" &&
+                        k !== "automationMode" &&
+                        k !== "maxGroup",
+                    )
                     .map(([k, v]) => (
                       <label className="field" key={k}>
                         {
@@ -1077,11 +1092,15 @@ export default function Page() {
               </label>
               {active.charges.length > 0 && (
                 <label className="field">
-                  Override PO IDs (comma separated, optional)
+                  {state.config.maxGroup === 1
+                    ? "Override PO ID (optional)"
+                    : "Override PO IDs (comma separated, optional)"}
                   <input
                     value={manual}
                     onChange={(e) => setManual(e.target.value)}
-                    placeholder="PO-2041, PO-2042"
+                    placeholder={
+                      state.mode === "live" ? "ST:321234567" : "PO-2041"
+                    }
                   />
                 </label>
               )}

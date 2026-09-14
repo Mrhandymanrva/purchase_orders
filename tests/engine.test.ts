@@ -20,8 +20,11 @@ const rec = (
   account: "card",
   ...extra,
 });
-const run = (rows: RecordItem[], config = defaults, rules: Rule[] = []) =>
-  reconcile(rows, config, rules, "2026-09-13");
+const run = (
+  rows: RecordItem[],
+  config = { ...defaults, maxGroup: 3 },
+  rules: Rule[] = [],
+) => reconcile(rows, config, rules, "2026-09-13");
 test("exact 1:1 match has deterministic evidence", () => {
   const r = run([rec("q", "qbo"), rec("p", "st")])[0];
   assert.equal(r.status, "Matched");

@@ -7,7 +7,13 @@ import {
   type RecordItem,
   type Directory,
 } from "./domain";
-import { fingerprint, reconcile, normalize, ENGINE_VERSION } from "./engine";
+import {
+  fingerprint,
+  reconcile,
+  normalize,
+  ENGINE_VERSION,
+  decisionFitsPolicy,
+} from "./engine";
 import { appendAudit } from "./store";
 import { suggestRules } from "./suggestions";
 import { applyOwnership } from "./ownership";
@@ -67,7 +73,7 @@ export const actionSchema = z
     z.object({
       type: z.literal("config"),
       revision: z.number().int(),
-      config: configSchema,
+      config: configSchema.extend({ maxGroup: z.literal(1) }),
     }),
     z.object({
       type: z.literal("decision"),
@@ -264,6 +270,9 @@ export function applyAction(
         state.records,
         state.records.map((r) => r.id),
       ),
+      excludedDecisions: state.decisions.filter(
+        (d) => !decisionFitsPolicy(d, state.config),
+      ),
       statusCountsBefore: counts(priorResults),
       statusCountsAfter: counts(results),
       results,
@@ -329,6 +338,10 @@ export function applyAction(
     const r = results.find((r) => r.id === action.resultId);
     if (!r) throw Error("Result no longer exists");
     const pos = action.poIds ?? r.pos;
+    if (!decisionFitsPolicy({ charges: r.charges, pos }, state.config))
+      throw Error(
+        "One-to-one matching allows at most one purchase and one PO per decision. Select a single PO ID.",
+      );
     if (
       new Set(pos).size !== pos.length ||
       pos.some(
@@ -340,6 +353,7 @@ export function applyAction(
     const locked = state.decisions.filter(
       (d) =>
         d.resultId !== r.id &&
+        decisionFitsPolicy(d, state.config) &&
         fingerprint(state.records, [...d.charges, ...d.pos]) === d.fingerprint,
     );
     if (

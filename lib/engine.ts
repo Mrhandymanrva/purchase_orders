@@ -10,7 +10,16 @@ import {
   type State,
 } from "./domain";
 import { vendorDisplay } from "./vendor-evidence";
-export const ENGINE_VERSION = "1.1.0";
+export const ENGINE_VERSION = "1.2.0";
+export function decisionFitsPolicy(
+  decision: Pick<Decision, "charges" | "pos">,
+  policy: Config,
+) {
+  return (
+    policy.maxGroup !== 1 ||
+    (decision.charges.length <= 1 && decision.pos.length <= 1)
+  );
+}
 export function normalize(v: string, rules: Rule[] = []): string {
   const clean = (s: string) =>
     s
@@ -176,6 +185,7 @@ export function reconcile(
   for (const d of decisions.slice().reverse()) {
     const ids = [...d.charges, ...d.pos];
     if (
+      !decisionFitsPolicy(d, config) ||
       ids.some((id) => consumed.has(id)) ||
       fingerprint(records, ids) !== d.fingerprint
     )
@@ -272,6 +282,7 @@ export function reconcile(
     Math.sign(q.amount) === Math.sign(p.amount) &&
     Math.abs(days(q.date, p.date)) <= config.windowDays;
   function propose(q: RecordItem[], p: RecordItem[]) {
+    if (q.length > config.maxGroup || p.length > config.maxGroup) return;
     if (q.some((a) => p.some((b) => !compatible(a, b)))) return;
     const delta = Math.abs(sum(q) - sum(p));
     const exact = delta <= config.toleranceCents;
@@ -369,13 +380,23 @@ export function reconcile(
           ? `Reference agrees (+${config.weights.reference}).`
           : "No shared PO reference (+0).",
         `Policy: threshold ${config.autoThreshold}, tolerance ${config.toleranceCents} cents. Engine ${ENGINE_VERSION}.`,
+        ...(config.maxGroup === 1
+          ? [
+              "One-to-one policy: one card transaction linked to one purchase order; purchases and POs are never combined.",
+            ]
+          : []),
       ],
     });
   }
   const availableQ = charges.filter((r) => !consumed.has(r.id)),
     availableP = pos.filter((r) => !consumed.has(r.id));
   // Enumerate every 1:1 candidate before spending the budget on groups.
-  if (matchAndFlag) {
+  if (config.maxGroup === 1) {
+    // Richmond: a purchase and a PO are indivisible. Never search combinations
+    // or let a legacy group-search limit block a valid one-to-one candidate.
+    for (const q of availableQ)
+      for (const p of availableP) if (compatible(q, p)) propose([q], [p]);
+  } else if (matchAndFlag) {
     for (const q of availableQ)
       availableP
         .filter((p) => compatible(q, p))

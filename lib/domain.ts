@@ -70,7 +70,7 @@ export const configSchema = z.object({
   toleranceCents: z.number().int().min(0).max(1000),
   autoThreshold: z.number().min(70).max(100),
   ambiguityMargin: z.number().min(0).max(30),
-  maxGroup: z.number().int().min(2).max(4),
+  maxGroup: z.number().int().min(1).max(4),
   weights: z
     .object({
       vendor: z.number().min(0),
@@ -92,7 +92,7 @@ export const defaults: Config = {
   toleranceCents: 1,
   autoThreshold: 85,
   ambiguityMargin: 5,
-  maxGroup: 3,
+  maxGroup: 1,
   weights: { vendor: 30, amount: 45, date: 15, reference: 10 },
 };
 export type Rule = {

@@ -71,3 +71,11 @@ Not performed: closed-period reconciliation against actual statements, backup/re
 
 - Successful Confirm reconciliation saves now close the originating detail panel. A delayed response cannot close a different record opened meanwhile. Failed saves leave the panel open and display an inline error; opening another record clears old notifications.
 - Browser validation on sample data: an invalid override PO returned the validation error with the panel still open; correcting the override and confirming closed the panel, restored the usable table and displayed Confirmed. Production compilation and TypeScript validation passed.
+
+## One-to-one purchase reconciliation — September 14, 2026
+
+- Engine 1.2.0 defaults to one purchase per PO. New policy saves enforce `maxGroup: 1`; grouped candidates are never generated in either automation mode, and the former group-pool cutoff cannot block single-PO matches. Manual overrides reject multiple POs. Older grouped decisions remain in audit/history without reserving records under the new policy.
+- All 162 tests passed, including nine dedicated one-to-one tests covering the reported $88.70 / three-PO example, split payments, refunds, crowded vendor histories, deterministic allocation, uncertainty flags, hard exceptions, legacy decisions and audited policy application. The updated API/PostgreSQL tests also passed after adding persistence assertions for switching an old grouped policy to 1:1. TypeScript validation passed.
+- Browser checks on sample data confirmed the fixed 1:1 policy, successful policy save, separate formerly grouped purchases/POs, singular override field, and an inline error when attempting to confirm multiple POs. The failed save kept the detail panel open.
+- A read-only comparison of production revision 53 removed 33 grouped links. Reconciled purchases changed from 105 to 67; all 1,330 source records appeared exactly once, all five saved manual decisions remained honored, and total spend, PO value and Van Stock totals were unchanged. CSV/PDF report models retained the same sources. The reported QBO:75290 purchase became Missing PO because the current imports contain no eligible single PO. This verifies policy behavior, not receipt-by-receipt accounting accuracy.
+- The production Next.js build passed after the one-to-one changes.

@@ -151,7 +151,7 @@ test("sync audit records coverage with its engine results for reproducible revie
   );
   const detail = s.audit.at(-1)!.detail as any;
   assert.deepEqual(detail.coverage, coverage);
-  assert.equal(detail.engine, "1.1.0");
+  assert.equal(detail.engine, "1.2.0");
   assert.equal(detail.results[0].status, "Outside card coverage");
   assert.ok(verifyAudit(s.audit));
 });

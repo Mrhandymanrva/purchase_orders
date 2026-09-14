@@ -19,6 +19,7 @@ test("individual filter links POs to actual charge owner", () => {
 });
 test("shared-PO report includes only selected person charges and retains group link", () => {
   const state = seed();
+  state.config.maxGroup = 3;
   state.records.find((r) => r.id === "Q-1047")!.cardUser = "Alex Morgan";
   const results = reconcile(
     state.records,

@@ -39,6 +39,7 @@ test("policy API applies flagged matching immediately, rejects stale saves, and 
     assert.equal(response.status, 200);
     const after: State = await response.json();
     assert.equal(after.config.automationMode, "match-and-flag");
+    assert.equal(after.config.maxGroup, 1);
     assert.deepEqual(after.records, before.records);
     assert.deepEqual(after.rules, before.rules);
     assert.deepEqual(after.decisions, before.decisions);
@@ -68,7 +69,7 @@ test("PostgreSQL reload preserves the new policy, resulting allocations, and imm
       await readFile(new URL("../db/001_initial.sql", import.meta.url), "utf8"),
     );
     await db.query("INSERT INTO app_state(id,payload) VALUES(1,$1)", [
-      JSON.stringify(seed()),
+      JSON.stringify({ ...seed(), config: { ...defaults, maxGroup: 3 } }),
     ]);
     await db.exec("BEGIN");
     const s = await readDB(db as DB, true);
@@ -86,6 +87,15 @@ test("PostgreSQL reload preserves the new policy, resulting allocations, and imm
     await db.exec("COMMIT");
     const loaded = await readDB(db as DB);
     assert.equal(loaded.config.automationMode, "match-and-flag");
+    assert.equal(loaded.config.maxGroup, 1);
+    assert.ok(
+      reconcile(
+        loaded.records,
+        loaded.config,
+        loaded.rules,
+        "2026-09-13",
+      ).every((r) => r.charges.length <= 1 && r.pos.length <= 1),
+    );
     assert.deepEqual(loaded.records, s.records);
     assert.deepEqual(loaded.rules, s.rules);
     assert.deepEqual(loaded.decisions, s.decisions);

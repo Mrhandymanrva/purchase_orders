@@ -21,7 +21,11 @@ import { reconciliationPDFModel } from "../lib/pdf-report-model";
 import { seed } from "../lib/seed";
 import { actionSchema, applyAction } from "../lib/actions";
 import { verifyAudit } from "../lib/store";
-const policy: Config = { ...defaults, automationMode: "match-and-flag" };
+const policy: Config = {
+  ...defaults,
+  maxGroup: 3,
+  automationMode: "match-and-flag",
+};
 const rec = (
   id: string,
   source: "qbo" | "st",
@@ -63,7 +67,10 @@ test("high confidence 1:1 matches are not blocked by a crowded vendor history", 
     rec("p", "st"),
     ...Array.from({ length: 25 }, (_, i) => rec(`extra-${i}`, "st", 20000 + i)),
   ];
-  assert.equal(charge(run(rows, defaults)).status, "Needs review");
+  assert.equal(
+    charge(run(rows, { ...defaults, maxGroup: 3 })).status,
+    "Needs review",
+  );
   const result = charge(run(rows));
   assert.equal(result.score, 90);
   assert.equal(result.status, "Matched");
@@ -288,7 +295,7 @@ test("policy changes validate, preserve decisions and rules, and audit the resul
     actionSchema.parse({
       type: "config",
       revision: state.revision,
-      config: policy,
+      config: { ...policy, maxGroup: 1 },
     }),
     "operator",
   );
