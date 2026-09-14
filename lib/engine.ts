@@ -1,13 +1,15 @@
 import {
   configSchema,
   recordSchema,
+  calendarDate,
   type RecordItem,
   type Config,
   type Rule,
   type Result,
   type Decision,
+  type State,
 } from "./domain";
-export const ENGINE_VERSION = "1.0.1";
+export const ENGINE_VERSION = "1.0.2";
 export function normalize(v: string, rules: Rule[] = []): string {
   const clean = (s: string) =>
     s
@@ -56,8 +58,15 @@ export function reconcile(
   rules: Rule[],
   asOf: string,
   decisions: Decision[] = [],
+  coverage?: State["coverage"],
 ): Result[] {
   const config = configSchema.parse(policy);
+  if (coverage) {
+    calendarDate.parse(coverage.chargesFrom);
+    calendarDate.parse(coverage.through);
+    if (coverage.chargesFrom > coverage.through)
+      throw Error("Card history coverage starts after its end date");
+  }
   const records = input
     .map((r) => ({
       ...recordSchema.parse(r),
@@ -367,21 +376,31 @@ export function reconcile(
       ),
     );
   }
-  for (const p of availableP.filter((r) => !consumed.has(r.id)))
+  for (const p of availableP.filter((r) => !consumed.has(r.id))) {
+    const outsideCoverage =
+      coverage && (p.date < coverage.chargesFrom || p.date > coverage.through);
     output.push(
       result(
         [],
         [p],
-        days(asOf, p.date) > config.graceDays
-          ? "PO without charge"
-          : "Awaiting charge",
+        outsideCoverage
+          ? "Outside card coverage"
+          : days(asOf, p.date) > config.graceDays
+            ? "PO without charge"
+            : "Awaiting charge",
         0,
-        [
-          "No available compatible posted card purchase.",
-          `Grace period: ${config.graceDays} days.`,
-        ],
+        outsideCoverage
+          ? [
+              `This PO is dated ${p.date}; imported card history covers ${coverage.chargesFrom} through ${coverage.through}.`,
+              "Retained for matching and reporting. Payment cannot be assessed from the available card history; this is excluded from review counts and unresolved variance.",
+            ]
+          : [
+              "No available compatible posted card purchase in the imported selected card accounts.",
+              `Grace period: ${config.graceDays} days.`,
+            ],
       ),
     );
+  }
   return output.sort(
     (a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id),
   );

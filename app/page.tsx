@@ -19,7 +19,12 @@ import {
 import { money, type State, type Result } from "@/lib/domain";
 import { seed } from "@/lib/seed";
 import { reconcile, ENGINE_VERSION } from "@/lib/engine";
-import { cardUsers, ownershipLabel, filterResults } from "@/lib/report";
+import {
+  cardUsers,
+  ownershipLabel,
+  filterResults,
+  needsReview,
+} from "@/lib/report";
 import CardMappings from "./card-mappings";
 import TechnicianScorecard from "./scorecard";
 import LegalLinks from "./legal-links";
@@ -51,6 +56,7 @@ export default function Page() {
           ? "2026-09-13"
           : new Date().toISOString().slice(0, 10),
         state.decisions,
+        state.coverage,
       ),
     [state],
   );
@@ -128,12 +134,10 @@ export default function Page() {
       setBusy(false);
     }
   }
-  const review = scopedResults.filter(
-    (r) =>
-      !["Matched", "No PO required", "Confirmed", "Dismissed"].includes(
-        r.status,
-      ),
-  );
+  const review = scopedResults.filter((r) => needsReview(r.status));
+  const outsideCardCoverage = results.filter(
+    (r) => r.status === "Outside card coverage",
+  ).length;
   if (!loaded)
     return (
       <main className="loading-page">
@@ -310,6 +314,43 @@ export default function Page() {
                       : "No successful sync yet"}
                 </span>
               </div>
+              {state.coverage && (
+                <section
+                  className="coverage-summary"
+                  aria-label="Imported history"
+                >
+                  <strong>Imported history</strong>
+                  <p>
+                    QuickBooks:{" "}
+                    {state.records.filter((r) => r.source === "qbo").length}{" "}
+                    card purchases · {state.coverage.chargesFrom} through{" "}
+                    {state.coverage.through}
+                    <br />
+                    ServiceTitan:{" "}
+                    {state.records.filter((r) => r.source === "st").length} POs
+                    · {state.coverage.posFrom} through {state.coverage.through}
+                  </p>
+                  {outsideCardCoverage > 0 && (
+                    <p>
+                      {outsideCardCoverage} unmatched POs fall outside the
+                      imported card dates. They remain available for matching
+                      and reporting, and are excluded from Needs review and
+                      unresolved variance.{" "}
+                      <button
+                        onClick={() => {
+                          setFilter("Outside card coverage");
+                          setIndividual("All individuals");
+                          setDateFrom("");
+                          setDateTo("");
+                          setQuery("");
+                        }}
+                      >
+                        View these POs
+                      </button>
+                    </p>
+                  )}
+                </section>
+              )}
               <section className="table-card">
                 <div className="table-top">
                   <div className="tabs">

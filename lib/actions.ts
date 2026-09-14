@@ -257,6 +257,7 @@ export function applyAction(
       state.rules,
       asOf,
       state.decisions,
+      state.coverage,
     );
     const r = results.find((r) => r.id === action.resultId);
     if (!r) throw Error("Result no longer exists");
@@ -320,6 +321,7 @@ export function applyAction(
         state.rules,
         asOf,
         state.decisions,
+        state.coverage,
       ),
     );
     for (const proposal of proposals) {
@@ -340,12 +342,14 @@ export function applyAction(
       ruleIds: state.rules.filter((r) => r.approved).map((r) => r.id),
       engine: ENGINE_VERSION,
       asOf,
+      coverage: state.coverage,
       results: reconcile(
         state.records,
         state.config,
         state.rules,
         asOf,
         state.decisions,
+        state.coverage,
       ),
     });
   }

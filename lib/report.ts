@@ -21,6 +21,8 @@ export type ReportFilter = {
 };
 export const isReviewed = (s: string) =>
   ["Matched", "Confirmed", "No PO required", "Dismissed"].includes(s);
+export const needsReview = (status: string) =>
+  !isReviewed(status) && status !== "Outside card coverage";
 export function filterResults(
   results: Result[],
   state: State,
@@ -46,7 +48,7 @@ export function filterResults(
       (!f.status ||
         f.status === "All items" ||
         (f.status === "Needs review"
-          ? !isReviewed(r.status)
+          ? needsReview(r.status)
           : r.status === f.status)) &&
       (!f.query ||
         `${r.vendor} ${r.id} ${r.pos.join(" ")} ${r.charges.join(" ")} ${ownershipLabel(state, r)}`

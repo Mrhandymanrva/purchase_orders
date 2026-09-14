@@ -16,6 +16,7 @@ export async function GET(req: Request) {
         ? "2026-09-13"
         : new Date().toISOString().slice(0, 10),
       state.decisions,
+      state.coverage,
     );
     return new Response(
       reportCSV(state, results, {
