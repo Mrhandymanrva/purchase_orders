@@ -18,6 +18,7 @@ export { getJSON } from "./integration-transport";
 export { encryptToken, decryptToken } from "./token-crypto";
 import { integrationSetup, IntegrationSetupError } from "./integration-setup";
 import { configuredST, ServiceTitanSetupError } from "./servicetitan-settings";
+import { resolveVendorDescription } from "./vendor-evidence";
 type Fetcher = typeof fetch;
 const sourceId = z
   .union([z.string().min(1), z.number().int().safe()])
@@ -87,7 +88,7 @@ export function mapQBO(raw: unknown): RecordItem | null {
     ? q.CustomField?.find((f) => f.Name === field)?.StringValue
     : undefined;
   return {
-    ...mapped,
+    ...resolveVendorDescription(mapped),
     cardUser: explicit || accountUsers[q.AccountRef.value] || "Unassigned",
     ownershipSource: explicit
       ? "QuickBooks custom field"

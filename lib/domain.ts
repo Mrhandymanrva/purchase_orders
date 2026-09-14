@@ -4,6 +4,13 @@ export const recordSchema = z.object({
   source: z.enum(["qbo", "st"]),
   vendor: z.string().min(1),
   vendorMissing: z.boolean().optional(),
+  vendorEvidence: z
+    .object({
+      source: z.literal("QuickBooks.PrivateNote"),
+      text: z.string().min(1),
+      rule: z.literal("qbo-lowes-store-v1"),
+    })
+    .optional(),
   amount: z.number().int().safe(),
   date: z
     .string()

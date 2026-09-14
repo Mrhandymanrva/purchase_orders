@@ -124,7 +124,7 @@ test("missing vendor identity prevents 1:1, grouped and refund auto matches even
     const results = reconcile(input, defaults, rules, "2026-09-13");
     const q = results.filter((r) => r.charges.includes("q"));
     assert.equal(q.length, 1);
-    assert.equal(q[0].status, "Missing vendor");
+    assert.equal(q[0].status, "Payee not assigned");
     assert.equal(q[0].score, 0);
     assert.deepEqual(q[0].pos, []);
     assert.equal(q[0].amount, input[0].amount);
@@ -140,7 +140,7 @@ test("missing-vendor review remains in reports and cannot produce exemption sugg
   const results = reconcile(s.records, defaults, [], "2026-09-13");
   assert.equal(filterResults(results, s, { status: "Needs review" }).length, 3);
   assert.deepEqual(suggestRules(s, results), []);
-  assert.ok(reportCSV(s, results, {}).includes("Missing vendor"));
+  assert.ok(reportCSV(s, results, {}).includes("Payee not assigned"));
 });
 
 test("an explicit manual review of a missing vendor is audited by the source fingerprint and invalidates when vendor evidence changes", () => {

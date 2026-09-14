@@ -71,7 +71,7 @@ test("fuel exemptions preserve duplicate, refund, missing-vendor and zero-amount
     results.find((r) => r.charges.includes(id))!.status;
   assert.equal(status("dup1"), "Possible duplicate");
   assert.equal(status("dup2"), "Possible duplicate");
-  assert.equal(status("unknown"), "Missing vendor");
+  assert.equal(status("unknown"), "Payee not assigned");
   assert.notEqual(status("refund"), "No PO required");
   assert.notEqual(status("zero"), "No PO required");
   assert.equal(status("good"), "No PO required");

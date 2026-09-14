@@ -1,4 +1,5 @@
 import type { State, Result } from "./domain";
+import { vendorBasis } from "./vendor-evidence";
 export function cardUsers(state: State, result: Result) {
   return Array.from(
     new Set(
@@ -88,6 +89,9 @@ export function reportCSV(
       "Link state",
       "Reconciliation status",
       "Confidence percent",
+      "QuickBooks description",
+      "Vendor evidence",
+      "Merchant recognition rule",
     ],
   ];
   for (const r of selected) {
@@ -122,6 +126,9 @@ export function reportCSV(
           : "No linked PO",
         r.status,
         r.score,
+        q.description,
+        vendorBasis(q),
+        q.vendorEvidence?.rule || "",
       ]);
     }
     if (
@@ -141,6 +148,9 @@ export function reportCSV(
         "Unlinked PO",
         r.status,
         r.score,
+        "",
+        "ServiceTitan vendor",
+        "",
       ]);
   }
   return "\uFEFF" + rows.map((row) => row.map(cell).join(",")).join("\r\n");

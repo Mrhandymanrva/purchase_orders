@@ -9,7 +9,8 @@ import {
   type Decision,
   type State,
 } from "./domain";
-export const ENGINE_VERSION = "1.0.3";
+import { vendorDisplay } from "./vendor-evidence";
+export const ENGINE_VERSION = "1.0.4";
 export function normalize(v: string, rules: Rule[] = []): string {
   const clean = (s: string) =>
     s
@@ -94,12 +95,20 @@ export function reconcile(
       status,
       charges: q.map((r) => r.id),
       pos: p.map((r) => r.id),
-      vendor: (q[0] || p[0]).vendor,
+      vendor: vendorDisplay(q[0] || p[0]),
       amount: q.length ? sum(q) : sum(p),
       difference: sum(q) - sum(p),
       date: (q[0] || p[0]).date,
       score,
-      reasons,
+      reasons: [
+        ...q
+          .filter((r) => r.vendorEvidence)
+          .map(
+            (r) =>
+              `${r.id}: ${r.vendor} recognized from QuickBooks description "${r.vendorEvidence!.text}" (${r.vendorEvidence!.rule}). The QuickBooks payee field is unassigned.`,
+          ),
+        ...reasons,
+      ],
       flags,
       kind:
         q.length > 1
@@ -109,7 +118,9 @@ export function reconcile(
             : q.length && p.length
               ? "1:1"
               : q.length
-                ? "Card purchase"
+                ? sum(q) < 0
+                  ? "Card refund / credit"
+                  : "Card purchase"
                 : "Purchase order",
     };
   }
@@ -140,10 +151,12 @@ export function reconcile(
       result(
         r.source === "qbo" ? [r] : [],
         r.source === "st" ? [r] : [],
-        "Missing vendor",
+        r.description.trim() ? "Payee not assigned" : "Missing vendor",
         0,
         [
-          "The source record has no vendor name. Automatic matching and No-PO exemptions are disabled.",
+          r.description.trim()
+            ? "QuickBooks has no assigned payee. The source description is shown, but has not been verified as a vendor. Automatic matching and No-PO exemptions are disabled."
+            : "QuickBooks has no assigned payee or usable merchant description. Automatic matching and No-PO exemptions are disabled.",
           "Add the vendor in the source system and sync again, or record an explicit manual review.",
         ],
         r.amount < 0 ? ["Unallocated refund / credit"] : [],
@@ -364,15 +377,19 @@ export function reconcile(
         [],
         duplicate.has(q.id)
           ? "Possible duplicate"
-          : days(asOf, q.date) > config.graceDays
-            ? "Missing PO"
-            : "Awaiting PO",
+          : q.amount < 0
+            ? "Unallocated refund"
+            : days(asOf, q.date) > config.graceDays
+              ? "Missing PO"
+              : "Awaiting PO",
         0,
         [
           duplicate.has(q.id)
             ? "Another charge has the same vendor, account, date and amount."
-            : "No available compatible purchase order found.",
-          `Grace period: ${config.graceDays} days.`,
+            : q.amount < 0
+              ? "Refund / credit identified, but no compatible credit purchase order was found. Review its allocation; the negative amount is retained."
+              : "No available compatible purchase order found.",
+          ...(q.amount < 0 ? [] : [`Grace period: ${config.graceDays} days.`]),
         ],
         q.amount < 0 ? ["Unallocated refund / credit"] : [],
       ),

@@ -19,6 +19,7 @@ import {
 import { money, type State, type Result } from "@/lib/domain";
 import { seed } from "@/lib/seed";
 import { reconcile, ENGINE_VERSION } from "@/lib/engine";
+import { vendorBasis } from "@/lib/vendor-evidence";
 import {
   cardUsers,
   ownershipLabel,
@@ -914,6 +915,7 @@ export default function Page() {
                     <p>{r.description}</p>
                     {r.source === "qbo" && (
                       <>
+                        <small>Vendor evidence: {vendorBasis(r)}</small>
                         <small>
                           Card user: {r.cardUser || "Unassigned"} ·{" "}
                           {r.ownershipSource || "Unassigned"}
@@ -1021,6 +1023,8 @@ function statusClass(s: string) {
     ? "success"
     : [
           "Missing vendor",
+          "Payee not assigned",
+          "Unallocated refund",
           "Missing PO",
           "Amount mismatch",
           "Possible duplicate",
