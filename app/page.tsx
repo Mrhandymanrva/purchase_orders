@@ -2,6 +2,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeftRight,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
   LayoutDashboard,
   SlidersHorizontal,
   Plug,
@@ -26,6 +29,10 @@ import {
   filterResults,
   needsReview,
   isReconciled,
+  reportColumns,
+  reportAmount,
+  nextReportSort,
+  type ReportSort,
 } from "@/lib/report";
 import CardMappings from "./card-mappings";
 import TechnicianScorecard from "./scorecard";
@@ -48,6 +55,10 @@ export default function Page() {
     [manual, setManual] = useState(""),
     [dateFrom, setDateFrom] = useState(""),
     [dateTo, setDateTo] = useState("");
+  const [sort, setSort] = useState<ReportSort>({
+    sortBy: "date",
+    sortDirection: "desc",
+  });
   const results = useMemo(
     () =>
       reconcile(
@@ -63,13 +74,15 @@ export default function Page() {
     [state],
   );
   const active = results.find((r) => r.id === selected);
-  const visible = filterResults(results, state, {
+  const reportFilter = {
+    ...sort,
     individual,
     status: filter,
     query,
     from: dateFrom,
     to: dateTo,
-  });
+  };
+  const visible = filterResults(results, state, reportFilter);
   const scopedRecords = state.records.filter(
     (r) =>
       r.source === "qbo" &&
@@ -86,6 +99,7 @@ export default function Page() {
   const reportUrl =
     "/api/report?" +
     new URLSearchParams({
+      ...sort,
       individual,
       status: filter,
       query,
@@ -468,13 +482,45 @@ export default function Page() {
                   <table>
                     <thead>
                       <tr>
-                        <th>VENDOR / TRANSACTION</th>
-                        <th>CARD USER</th>
-                        <th>DATE</th>
-                        <th>AMOUNT</th>
-                        <th>STATUS</th>
-                        <th>CONFIDENCE</th>
-                        <th>PURCHASE ORDER</th>
+                        {reportColumns.map((column) => {
+                          const activeSort = sort.sortBy === column.key;
+                          const next = nextReportSort(sort, column.key);
+                          const Icon = activeSort
+                            ? sort.sortDirection === "asc"
+                              ? ArrowUp
+                              : ArrowDown
+                            : ArrowUpDown;
+                          return (
+                            <th
+                              key={column.key}
+                              scope="col"
+                              aria-sort={
+                                activeSort
+                                  ? sort.sortDirection === "asc"
+                                    ? "ascending"
+                                    : "descending"
+                                  : "none"
+                              }
+                              className="sortable-header"
+                            >
+                              <button
+                                type="button"
+                                className="sort-button"
+                                onClick={() => setSort(next)}
+                                aria-label={
+                                  column.label +
+                                  ": sort " +
+                                  (next.sortDirection === "asc"
+                                    ? "ascending"
+                                    : "descending")
+                                }
+                              >
+                                {column.label}
+                                <Icon size={13} aria-hidden="true" />
+                              </button>
+                            </th>
+                          );
+                        })}
                         <th />
                       </tr>
                     </thead>
@@ -517,19 +563,7 @@ export default function Page() {
                             )}
                           </td>
                           <td className="amount">
-                            {money(
-                              individual === "All individuals" ||
-                                !r.charges.length
-                                ? r.amount
-                                : state.records
-                                    .filter(
-                                      (q) =>
-                                        r.charges.includes(q.id) &&
-                                        (q.cardUser || "Unassigned") ===
-                                          individual,
-                                    )
-                                    .reduce((n, q) => n + q.amount, 0),
-                            )}
+                            {money(reportAmount(state, r, reportFilter))}
                           </td>
                           <td>
                             <span className={"badge " + statusClass(r.status)}>

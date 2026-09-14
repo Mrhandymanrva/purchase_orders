@@ -1,7 +1,7 @@
 import { authorize } from "@/lib/auth";
 import { readState } from "@/lib/store";
 import { reconcile } from "@/lib/engine";
-import { reportCSV } from "@/lib/report";
+import { reportCSV, reportSortSchema, type ReportFilter } from "@/lib/report";
 import { calendarDate } from "@/lib/domain";
 import { reconciliationPDFModel } from "@/lib/pdf-report-model";
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ export async function GET(req: Request) {
   }
   const p = new URL(req.url).searchParams;
   const format = p.get("format") || "csv";
-  const filter = {
+  const filter: ReportFilter = {
     individual: p.get("individual") || undefined,
     status: p.get("status") || undefined,
     query: p.get("query") || undefined,
@@ -27,6 +27,13 @@ export async function GET(req: Request) {
       Object.values(filter).some((v) => v && v.length > 500)
     )
       throw Error();
+    Object.assign(
+      filter,
+      reportSortSchema.parse({
+        sortBy: p.get("sortBy") || undefined,
+        sortDirection: p.get("sortDirection") || undefined,
+      }),
+    );
     if (filter.from) calendarDate.parse(filter.from);
     if (filter.to) calendarDate.parse(filter.to);
     if (filter.from && filter.to && filter.from > filter.to) throw Error();

@@ -1449,3 +1449,37 @@ footer,
 .tabs {
   flex-wrap: wrap;
 }
+
+.sortable-header {
+  padding: 0;
+}
+.sort-button {
+  width: 100%;
+  padding: 14px 16px;
+  justify-content: flex-start;
+  gap: 7px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.sort-button svg {
+  flex-shrink: 0;
+  opacity: 0.55;
+}
+.sortable-header[aria-sort="ascending"],
+.sortable-header[aria-sort="descending"] {
+  color: #285d48;
+  background: #edf3ef;
+}
+.sortable-header[aria-sort="ascending"] svg,
+.sortable-header[aria-sort="descending"] svg {
+  opacity: 1;
+}
+.sort-button:focus-visible {
+  outline-offset: -3px;
+}

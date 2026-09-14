@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { State, Result, RecordItem } from "./domain";
 import { vendorBasis } from "./vendor-evidence";
 import { isReconciled, needsReview } from "./reconciliation-status";
@@ -16,7 +17,39 @@ export function cardUsers(state: State, result: Result) {
 export function ownershipLabel(state: State, result: Result) {
   return cardUsers(state, result).join(", ") || "No card charge";
 }
-export type ReportFilter = {
+export const reportColumns = [
+  { key: "vendor", label: "Vendor / transaction" },
+  { key: "cardUser", label: "Card user" },
+  { key: "date", label: "Date" },
+  { key: "amount", label: "Amount" },
+  { key: "status", label: "Status" },
+  { key: "score", label: "Confidence" },
+  { key: "po", label: "Purchase order" },
+] as const;
+export const reportSortSchema = z.object({
+  sortBy: z
+    .enum(["vendor", "cardUser", "date", "amount", "status", "score", "po"])
+    .default("date"),
+  sortDirection: z.enum(["asc", "desc"]).default("desc"),
+});
+export type ReportSort = z.infer<typeof reportSortSchema>;
+export function nextReportSort(
+  current: ReportSort,
+  key: ReportSort["sortBy"],
+): ReportSort {
+  return {
+    sortBy: key,
+    sortDirection:
+      current.sortBy === key
+        ? current.sortDirection === "asc"
+          ? "desc"
+          : "asc"
+        : ["date", "amount", "score"].includes(key)
+          ? "desc"
+          : "asc",
+  };
+}
+export type ReportFilter = Partial<ReportSort> & {
   individual?: string;
   status?: string;
   query?: string;
@@ -32,12 +65,71 @@ export function chargeInReport(q: RecordItem, f: ReportFilter) {
     (!f.to || q.date <= f.to)
   );
 }
+// Use the same filtered group amount in the register and its sorting. Exports
+// expand a group into source rows while retaining this group order.
+export function reportAmount(
+  state: State,
+  result: Result,
+  filter: ReportFilter,
+) {
+  return result.charges.length
+    ? state.records
+        .filter(
+          (q) => result.charges.includes(q.id) && chargeInReport(q, filter),
+        )
+        .reduce((n, q) => n + q.amount, 0)
+    : result.amount;
+}
+const collator = new Intl.Collator("en-US", {
+  numeric: true,
+  sensitivity: "base",
+});
+function sortResults(results: Result[], state: State, filter: ReportFilter) {
+  const { sortBy, sortDirection } = reportSortSchema.parse(filter);
+  const value = (r: Result): string | number | null => {
+    switch (sortBy) {
+      case "vendor":
+        return r.vendor;
+      case "cardUser":
+        return ownershipLabel(state, r);
+      case "date":
+        return r.date;
+      case "amount":
+        return reportAmount(state, r, filter);
+      case "status":
+        return r.status;
+      case "score":
+        return r.score > 0 ? r.score : null;
+      case "po":
+        return r.pos.length ? r.pos.join(", ") : null;
+    }
+  };
+  return results
+    .map((result) => ({ result, value: value(result) }))
+    .sort((a, b) => {
+      // Missing scores / POs stay at the bottom in either direction.
+      if (a.value === null && b.value !== null) return 1;
+      if (a.value !== null && b.value === null) return -1;
+      const compared =
+        a.value === null || b.value === null
+          ? 0
+          : typeof a.value === "number" && typeof b.value === "number"
+            ? a.value - b.value
+            : collator.compare(String(a.value), String(b.value));
+      return (
+        compared * (sortDirection === "asc" ? 1 : -1) ||
+        collator.compare(a.result.id, b.result.id) ||
+        a.result.id.localeCompare(b.result.id, "en-US")
+      );
+    })
+    .map((row) => row.result);
+}
 export function filterResults(
   results: Result[],
   state: State,
   f: ReportFilter,
 ) {
-  return results.filter((r) => {
+  const selected = results.filter((r) => {
     const relevant = r.charges.length
       ? state.records
           .filter((q) => r.charges.includes(q.id))
@@ -60,6 +152,7 @@ export function filterResults(
           .includes(f.query.toLowerCase()))
     );
   });
+  return sortResults(selected, state, f);
 }
 function cell(value: string | number) {
   const s = String(value);
