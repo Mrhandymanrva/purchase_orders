@@ -1,4 +1,4 @@
-import type { State, Result } from "./domain";
+import type { State, Result, RecordItem } from "./domain";
 import { vendorBasis } from "./vendor-evidence";
 export function cardUsers(state: State, result: Result) {
   return Array.from(
@@ -24,6 +24,15 @@ export const isReviewed = (s: string) =>
   ["Matched", "Confirmed", "No PO required", "Dismissed"].includes(s);
 export const needsReview = (status: string) =>
   !isReviewed(status) && status !== "Outside card coverage";
+export function chargeInReport(q: RecordItem, f: ReportFilter) {
+  return (
+    (!f.individual ||
+      f.individual === "All individuals" ||
+      (q.cardUser || "Unassigned") === f.individual) &&
+    (!f.from || q.date >= f.from) &&
+    (!f.to || q.date <= f.to)
+  );
+}
 export function filterResults(
   results: Result[],
   state: State,
@@ -33,14 +42,7 @@ export function filterResults(
     const relevant = r.charges.length
       ? state.records
           .filter((q) => r.charges.includes(q.id))
-          .some(
-            (q) =>
-              (!f.individual ||
-                f.individual === "All individuals" ||
-                (q.cardUser || "Unassigned") === f.individual) &&
-              (!f.from || q.date >= f.from) &&
-              (!f.to || q.date <= f.to),
-          )
+          .some((q) => chargeInReport(q, f))
       : (!f.individual || f.individual === "All individuals") &&
         (!f.from || r.date >= f.from) &&
         (!f.to || r.date <= f.to);
@@ -98,17 +100,7 @@ export function reportCSV(
     for (const id of r.charges) {
       const q = state.records.find((q) => q.id === id)!;
       const user = q.cardUser || "Unassigned";
-      if (
-        filter.individual &&
-        filter.individual !== "All individuals" &&
-        filter.individual !== user
-      )
-        continue;
-      if (
-        (filter.from && q.date < filter.from) ||
-        (filter.to && q.date > filter.to)
-      )
-        continue;
+      if (!chargeInReport(q, filter)) continue;
       rows.push([
         user,
         q.ownershipSource || "Unassigned",

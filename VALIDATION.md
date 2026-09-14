@@ -40,3 +40,9 @@
 - npm dependency audit reported zero vulnerabilities after overriding PostCSS to 8.5.28 and ExcelJS's UUID dependency to 11.1.1.
 
 Not performed: closed-period reconciliation against actual statements, backup/restore validation, or a separate certificate-verified PostgreSQL TLS test. The deployed app connects through Railway's private network. No external business records were modified. The local sample server uses fictional data and its memory resets on restart; the deployed workspace uses PostgreSQL. Complete README go-live validation using authorized credentials and your actual card-user mapping.
+
+## PDF report validation - September 14, 2026
+
+- All 133 automated tests passed after the PDF changes. Five PDF tests cover shared-PO accounting, per-person/date/status/search filters, signed refunds, original merchant evidence, historical PO treatment, week/month/quarter/year scorecards, source attribution, Unicode and long-row pagination, empty reports, authentication, download headers, invalid inputs, unchanged workspace state, and existing CSV compatibility.
+- TypeScript validation and production compilation passed. The embedded Noto Sans fonts use the retained SIL Open Font License; Next standalone tracing explicitly includes the font assets.
+- Reconciliation, needs-review, individual scorecard, all-person scorecard and empty-result PDFs were generated. Every sample page was checked for text outside the print margins. Reconciliation pages, individual scorecard pages and the empty report were visually reviewed; the reconciliation date column was widened so dates remain on one line. No source provider calls or financial-state mutations are used by exports.

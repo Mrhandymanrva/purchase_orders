@@ -224,9 +224,17 @@ export default function Page() {
             </div>
             <div className="heading-actions">
               {tab === "Reconciliation" && (
-                <a className="button-link" href={reportUrl}>
-                  Export report ↗
-                </a>
+                <div
+                  className="export-actions"
+                  aria-label="Export reconciliation"
+                >
+                  <a className="button-link" href={reportUrl}>
+                    Export CSV
+                  </a>
+                  <a className="button-link" href={reportUrl + "&format=pdf"}>
+                    Export PDF
+                  </a>
+                </div>
               )}
               <button
                 className="primary"

@@ -207,14 +207,19 @@ test("reports and scorecards retain signed refunds and show merchant evidence se
     po,
   ];
   const results = reconcile(s.records, s.config, [], "2026-09-14");
-  const rows = parse(reportCSV(s, results, {}), { columns: true, bom: true });
+  const rows = parse(reportCSV(s, results, {}), {
+    columns: true,
+    bom: true,
+  }) as Record<string, string>[];
   const refund = rows.find((r: any) => r["Charge ID"] === "QBO:75890");
+  assert.ok(refund);
   assert.equal(refund.Vendor, "Lowe's");
   assert.equal(refund["Amount USD"], "-50.37");
   assert.equal(refund["QuickBooks description"], raw.PrivateNote);
   assert.equal(refund["Merchant recognition rule"], LOWES_DESCRIPTION_RULE);
   assert.match(refund["Vendor evidence"], /description; payee not assigned/);
   const unknown = rows.find((r: any) => r["Charge ID"] === "QBO:unknown");
+  assert.ok(unknown);
   assert.equal(unknown["QuickBooks description"], "Other merchant");
   assert.match(unknown["Vendor evidence"], /unverified/);
   assert.equal(rows.length, 3);

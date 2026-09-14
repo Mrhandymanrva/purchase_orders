@@ -959,6 +959,12 @@ footer {
   align-items: center;
   flex-wrap: wrap;
 }
+.export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
 .button-link {
   display: inline-flex;
   padding: 11px 14px;

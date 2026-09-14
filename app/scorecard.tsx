@@ -76,6 +76,14 @@ export default function TechnicianScorecard({
     (range.from < state.coverage.chargesFrom ||
       range.from < state.coverage.posFrom ||
       range.to > state.coverage.through);
+  const exportUrl =
+    "/api/scorecard?" +
+    new URLSearchParams({
+      unit: period.unit,
+      year: String(period.year),
+      period: String(period.period),
+      person: personId,
+    });
   return (
     <div className="technician-scorecard">
       <section className="panel period-panel">
@@ -87,20 +95,14 @@ export default function TechnicianScorecard({
               period.
             </p>
           </div>
-          <a
-            className="button-link"
-            href={
-              "/api/scorecard?" +
-              new URLSearchParams({
-                unit: period.unit,
-                year: String(period.year),
-                period: String(period.period),
-                person: personId,
-              })
-            }
-          >
-            Export scorecard
-          </a>
+          <div className="export-actions" aria-label="Export scorecard">
+            <a className="button-link" href={exportUrl}>
+              Export CSV
+            </a>
+            <a className="button-link" href={exportUrl + "&format=pdf"}>
+              Export PDF
+            </a>
+          </div>
         </div>
         <div className="period-controls">
           <label className="field">

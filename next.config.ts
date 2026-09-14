@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 const config: NextConfig = {
   output: "standalone",
+  outputFileTracingIncludes: {
+    "/*": ["./assets/fonts/*.ttf", "./assets/fonts/OFL.txt"],
+  },
   poweredByHeader: false,
   async headers() {
     return [

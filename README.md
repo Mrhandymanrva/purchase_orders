@@ -220,3 +220,15 @@ Railway no longer allows new services to opt into legacy `railway.json` / `railw
 - `lib/store.ts`, `actions.ts`: transaction boundary, revisions, reservations and audit.
 - `db`, `scripts`: schema, migration and guarded test seeding.
 - `tests`: matching and integration tests.
+
+## PDF reports
+
+Choose **Export PDF** beside **Export CSV** on Reconciliation or Technician scorecards. CSV remains the Excel-compatible data export. Both formats use the screen's current filters and read the existing imported snapshot; exporting does not sync or modify ServiceTitan, QuickBooks, mappings, rules or decisions.
+
+Reconciliation PDFs include the selected person, status, dates and search, summary totals, and one row per reconciliation group. Charges are restricted to the selected person/date range. Related PO totals count each included PO once; full-group PO amounts and variance are explicitly labeled when a filter selects only part of a group. Historical POs outside card coverage remain visible in All items but do not increase needs-review counts or unresolved variance. Refunds retain their negative amounts and merchant evidence. Proposed links remain visibly distinct from reconciled links.
+
+Scorecard PDFs support week, month, quarter and year filters. They include card spend, PO value, spend/PO, Van Stock and record counts. Select an individual to add the underlying source activity and attribution. Coverage and partial-period labels match the scorecard; report totals cannot fill gaps in imported history.
+
+Reports use landscape US Letter pages with embedded fonts, repeated table headers, page numbers, generation time in Eastern Time, source coverage, workspace revision and engine version. Sample mode is labeled. Long text wraps across pages; unavailable font characters are preserved as Unicode code-point labels. Generation runs on the authenticated Node server with no external rendering service and no report persistence. Responses use `Cache-Control: no-store` and download filenames. Bundled Noto Sans fonts and their SIL Open Font License are traced into the Railway standalone image; see `assets/fonts/README.md`.
+
+HTTP endpoints: `/api/report?format=pdf` and `/api/scorecard?format=pdf` accept the same filters as their CSV counterparts. Omitting `format` keeps CSV. Invalid formats, dates or periods return 400; authentication is required. Go-live checks should compare a selected person's PDF and CSV against the on-screen totals and verify a multipage report after deployment.
