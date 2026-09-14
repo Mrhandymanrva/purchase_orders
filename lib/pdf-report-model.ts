@@ -3,6 +3,7 @@ import {
   filterResults,
   needsReview,
   isReviewed,
+  isReconciled,
   chargeInReport,
   type ReportFilter,
 } from "./report";
@@ -92,6 +93,7 @@ export function reconciliationPDFModel(
     notes: [
       "Totals follow every filter in this export. Credits reduce card spend. Each linked PO is counted once; related PO value is not a technician allocation.",
       "Outside card coverage items are retained for reference and excluded from review and variance. A proposed link is not a confirmed match.",
+      `${groups.filter((g) => g.result.status === "Matched with flags").length} groups matched with flags: these are reconciled automatically; flags explain uncertainty and do not require individual confirmation.`,
       ...(partial
         ? [
             "Some groups include purchases outside the selected person/date filters. Only selected purchases are shown; PO values and variance describe the full group.",
@@ -127,12 +129,9 @@ export function reconciliationPDFModel(
             r.status,
             ...(r.score ? [`${r.score}% confidence`] : []),
             ...(r.pos.length && r.charges.length
-              ? [
-                  ["Matched", "Confirmed"].includes(r.status)
-                    ? "Reconciled link"
-                    : "Proposed link",
-                ]
+              ? [isReconciled(r.status) ? "Reconciled link" : "Proposed link"]
               : []),
+            ...r.flags,
           ].join("\n"),
           p
             .map(

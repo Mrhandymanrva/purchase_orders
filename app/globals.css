@@ -1427,3 +1427,25 @@ footer,
     gap: 20px;
   }
 }
+
+.match-flags {
+  display: block;
+  margin-top: 6px;
+  max-width: 240px;
+  color: #806117;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+}
+.kpis .text-button {
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #32634f;
+  font-size: 12px;
+  text-decoration: underline;
+}
+.tabs {
+  flex-wrap: wrap;
+}

@@ -1,5 +1,8 @@
 import type { State, Result, RecordItem } from "./domain";
 import { vendorBasis } from "./vendor-evidence";
+import { isReconciled, needsReview } from "./reconciliation-status";
+import { ENGINE_VERSION } from "./engine";
+export { isReconciled, isReviewed, needsReview } from "./reconciliation-status";
 export function cardUsers(state: State, result: Result) {
   return Array.from(
     new Set(
@@ -20,10 +23,6 @@ export type ReportFilter = {
   from?: string;
   to?: string;
 };
-export const isReviewed = (s: string) =>
-  ["Matched", "Confirmed", "No PO required", "Dismissed"].includes(s);
-export const needsReview = (status: string) =>
-  !isReviewed(status) && status !== "Outside card coverage";
 export function chargeInReport(q: RecordItem, f: ReportFilter) {
   return (
     (!f.individual ||
@@ -52,7 +51,9 @@ export function filterResults(
         f.status === "All items" ||
         (f.status === "Needs review"
           ? needsReview(r.status)
-          : r.status === f.status)) &&
+          : f.status === "Matched"
+            ? isReconciled(r.status)
+            : r.status === f.status)) &&
       (!f.query ||
         `${r.vendor} ${r.id} ${r.pos.join(" ")} ${r.charges.join(" ")} ${ownershipLabel(state, r)}`
           .toLowerCase()
@@ -94,6 +95,9 @@ export function reportCSV(
       "QuickBooks description",
       "Vendor evidence",
       "Merchant recognition rule",
+      "Flags",
+      "Match evidence",
+      "Engine version",
     ],
   ];
   for (const r of selected) {
@@ -112,7 +116,7 @@ export function reportCSV(
         q.amount / 100,
         r.pos.join("; "),
         r.pos.length
-          ? ["Matched", "Confirmed"].includes(r.status)
+          ? isReconciled(r.status)
             ? "Reconciled"
             : "Proposed — review required"
           : "No linked PO",
@@ -121,6 +125,9 @@ export function reportCSV(
         q.description,
         vendorBasis(q),
         q.vendorEvidence?.rule || "",
+        r.flags.join("; "),
+        r.reasons.join(" "),
+        ENGINE_VERSION,
       ]);
     }
     if (
@@ -143,6 +150,9 @@ export function reportCSV(
         "",
         "ServiceTitan vendor",
         "",
+        r.flags.join("; "),
+        r.reasons.join(" "),
+        ENGINE_VERSION,
       ]);
   }
   return "\uFEFF" + rows.map((row) => row.map(cell).join(",")).join("\r\n");

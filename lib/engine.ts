@@ -10,7 +10,7 @@ import {
   type State,
 } from "./domain";
 import { vendorDisplay } from "./vendor-evidence";
-export const ENGINE_VERSION = "1.0.4";
+export const ENGINE_VERSION = "1.1.0";
 export function normalize(v: string, rules: Rule[] = []): string {
   const clean = (s: string) =>
     s
@@ -53,6 +53,53 @@ function combinations<T>(arr: T[], max: number): T[][] {
   walk(0, []);
   return out;
 }
+// Positive magnitudes permit amount pruning. Work and output are bounded per
+// anchor; exceeding the budget becomes an explicit flag, never a silent cutoff.
+function balancedGroups(
+  items: RecordItem[],
+  target: number,
+  max: number,
+  tolerance: number,
+) {
+  const high = Math.abs(target) + tolerance,
+    low = Math.max(0, Math.abs(target) - tolerance);
+  const sorted = items
+    .filter((r) => Math.abs(r.amount) > 0 && Math.abs(r.amount) <= high)
+    .sort(
+      (a, b) =>
+        Math.abs(a.amount) - Math.abs(b.amount) || a.id.localeCompare(b.id),
+    );
+  const groups: RecordItem[][] = [];
+  let visited = 0,
+    limited = false;
+  function walk(start: number, group: RecordItem[], total: number) {
+    if (group.length >= 2 && total >= low && total <= high) {
+      groups.push(group);
+      if (groups.length >= 200) {
+        limited = true;
+        return;
+      }
+    }
+    if (group.length === max || limited) return;
+    const slots = max - group.length;
+    const largest = sorted
+      .slice(Math.max(start, sorted.length - slots))
+      .reduce((n, r) => n + Math.abs(r.amount), 0);
+    if (total + largest < low) return;
+    for (let i = start; i < sorted.length; i++) {
+      if (++visited > 20000) {
+        limited = true;
+        return;
+      }
+      const next = total + Math.abs(sorted[i].amount);
+      if (next > high) break;
+      walk(i + 1, [...group, sorted[i]], next);
+      if (limited) return;
+    }
+  }
+  walk(0, [], 0);
+  return { groups, limited };
+}
 export function reconcile(
   input: RecordItem[],
   policy: Config,
@@ -62,6 +109,7 @@ export function reconcile(
   coverage?: State["coverage"],
 ): Result[] {
   const config = configSchema.parse(policy);
+  const matchAndFlag = config.automationMode === "match-and-flag";
   if (coverage) {
     calendarDate.parse(coverage.chargesFrom);
     calendarDate.parse(coverage.through);
@@ -210,6 +258,11 @@ export function reconcile(
     reasons: string[];
     flags: string[];
     exact: boolean;
+    key: string;
+    ids: string[];
+    dateGap: number;
+    referenceMatch: boolean;
+    identity: number;
   };
   const candidates: Candidate[] = [];
   const bounded = new Set<string>();
@@ -248,10 +301,15 @@ export function reconcile(
         datePoints +
         (ref ? config.weights.reference : 0),
     );
-    if (candidates.length >= 20000)
+    if (candidates.length >= 20000) {
+      if (matchAndFlag && (q.length > 1 || p.length > 1)) {
+        [...q, ...p].forEach((r) => bounded.add(r.id));
+        return;
+      }
       throw Error(
         "Candidate limit reached; narrow the sync date range or vendor policy",
       );
+    }
     const referenceConflict = q.some(
       (a) =>
         a.reference &&
@@ -263,15 +321,45 @@ export function reconcile(
           days((b.createdAt || b.date).slice(0, 10), a.date) > config.lateDays,
       ),
     );
+    const cardPeople = new Set(
+      q
+        .map((r) => r.cardPersonId)
+        .filter((id): id is string => !!id && id.startsWith("technician:")),
+    );
+    const poPeople = new Set(
+      p
+        .filter((r) => r.technicianId)
+        .map((r) => `technician:${r.technicianId}`),
+    );
+    const identitiesKnown =
+      q.every((r) => r.cardPersonId?.startsWith("technician:")) &&
+      p.every((r) => r.technicianId);
+    const identity = identitiesKnown
+      ? cardPeople.size === poPeople.size &&
+        [...cardPeople].every((id) => poPeople.has(id))
+        ? 1
+        : -1
+      : 0;
     candidates.push({
       q,
       p,
       score,
       exact,
+      key: idFor(q, p),
+      ids: [...q, ...p].map((r) => r.id),
+      dateGap,
+      referenceMatch: ref,
+      identity,
       flags: [
         ...(referenceConflict ? ["PO reference conflict"] : []),
         ...(late ? ["Late PO"] : []),
         ...(sum(q) < 0 ? ["Refund / credit"] : []),
+        ...(matchAndFlag && identity < 0
+          ? ["PO technician differs from card user"]
+          : []),
+        ...(matchAndFlag && identity === 0
+          ? ["Card user / PO technician not fully verified"]
+          : []),
       ],
       reasons: [
         `Exact normalized vendor: ${normalize(q[0].vendor, rules)} (+${config.weights.vendor}).`,
@@ -286,61 +374,131 @@ export function reconcile(
   }
   const availableQ = charges.filter((r) => !consumed.has(r.id)),
     availableP = pos.filter((r) => !consumed.has(r.id));
-  for (const q of availableQ) {
-    const eligible = availableP.filter((p) => compatible(q, p));
-    eligible.forEach((p) => propose([q], [p]));
-    if (eligible.length > 14) {
-      bounded.add(q.id);
-      continue;
+  // Enumerate every 1:1 candidate before spending the budget on groups.
+  if (matchAndFlag) {
+    for (const q of availableQ)
+      availableP
+        .filter((p) => compatible(q, p))
+        .forEach((p) => propose([q], [p]));
+    for (const q of availableQ) {
+      if (candidates.length >= 20000) {
+        bounded.add(q.id);
+        continue;
+      }
+      const found = balancedGroups(
+        availableP.filter((p) => compatible(q, p)),
+        q.amount,
+        config.maxGroup,
+        config.toleranceCents,
+      );
+      found.groups.forEach((group) => propose([q], group));
+      if (found.limited) bounded.add(q.id);
     }
-    combinations(eligible, config.maxGroup).forEach((group) =>
-      propose([q], group),
-    );
-  }
-  for (const p of availableP) {
-    const eligible = availableQ.filter((q) => compatible(q, p));
-    if (eligible.length > 14) {
-      bounded.add(p.id);
-      continue;
+    for (const p of availableP) {
+      if (candidates.length >= 20000) {
+        bounded.add(p.id);
+        continue;
+      }
+      const found = balancedGroups(
+        availableQ.filter((q) => compatible(q, p)),
+        p.amount,
+        config.maxGroup,
+        config.toleranceCents,
+      );
+      found.groups.forEach((group) => propose(group, [p]));
+      if (found.limited) bounded.add(p.id);
     }
-    combinations(eligible, config.maxGroup).forEach((group) =>
-      propose(group, [p]),
-    );
+  } else {
+    for (const q of availableQ) {
+      const eligible = availableP.filter((p) => compatible(q, p));
+      eligible.forEach((p) => propose([q], [p]));
+      if (eligible.length > 14) {
+        bounded.add(q.id);
+        continue;
+      }
+      combinations(eligible, config.maxGroup).forEach((group) =>
+        propose([q], group),
+      );
+    }
+    for (const p of availableP) {
+      const eligible = availableQ.filter((q) => compatible(q, p));
+      if (eligible.length > 14) {
+        bounded.add(p.id);
+        continue;
+      }
+      combinations(eligible, config.maxGroup).forEach((group) =>
+        propose(group, [p]),
+      );
+    }
   }
+  const safe = (c: Candidate) =>
+    !c.flags.includes("PO reference conflict") &&
+    !c.q.some((q) => duplicate.has(q.id));
   candidates.sort(
     (a, b) =>
+      (matchAndFlag ? Number(safe(b)) - Number(safe(a)) : 0) ||
       Number(b.exact) - Number(a.exact) ||
+      (matchAndFlag
+        ? Number(b.score >= config.autoThreshold) -
+            Number(a.score >= config.autoThreshold) ||
+          Number(b.referenceMatch) - Number(a.referenceMatch) ||
+          b.identity - a.identity ||
+          a.ids.length - b.ids.length
+        : 0) ||
       b.score - a.score ||
-      idFor(a.q, a.p).localeCompare(idFor(b.q, b.p)),
+      (matchAndFlag ? a.dateGap - b.dateGap : 0) ||
+      a.key.localeCompare(b.key),
   );
-  const ids = (c: Candidate) => [...c.q, ...c.p].map((r) => r.id);
+  const ids = (c: Candidate) => c.ids;
+  const byRecord = new Map<string, Candidate[]>();
+  for (const c of candidates)
+    for (const id of c.ids) {
+      const list = byRecord.get(id) || [];
+      list.push(c);
+      byRecord.set(id, list);
+    }
   for (const c of candidates) {
     if (ids(c).some((id) => consumed.has(id))) continue;
-    const overlap = candidates.some(
+    const alternatives = [
+      ...new Set(c.ids.flatMap((id) => byRecord.get(id) || [])),
+    ].filter(
       (o) =>
         o !== c &&
         o.exact === c.exact &&
         Math.abs(o.score - c.score) <= config.ambiguityMargin &&
-        ids(o).some((id) => ids(c).includes(id)) &&
+        (!matchAndFlag || !safe(c) || safe(o)) &&
         !ids(o).some((id) => consumed.has(id)),
     );
+    const overlap = alternatives.length > 0;
     const dup = c.q.some((q) => duplicate.has(q.id));
     const truncated = ids(c).some((id) => bounded.has(id));
-    let status = dup
-      ? "Possible duplicate"
-      : overlap
-        ? "Ambiguous"
-        : truncated || c.flags.includes("PO reference conflict")
-          ? "Needs review"
-          : !c.exact
-            ? Math.abs(sum(c.q)) < Math.abs(sum(c.p))
-              ? "Partial match"
-              : "Amount mismatch"
-            : c.flags.includes("Late PO")
-              ? "Late PO"
-              : c.score >= config.autoThreshold
-                ? "Matched"
-                : "Needs review";
+    const automatic =
+      matchAndFlag && c.exact && safe(c) && c.score >= config.autoThreshold;
+    const flags = [
+      ...c.flags,
+      ...(matchAndFlag && overlap ? ["Competing PO candidates"] : []),
+      ...(matchAndFlag && truncated ? ["Group search limited"] : []),
+    ];
+    const uncertainty = flags.some((flag) => flag !== "Refund / credit");
+    let status = automatic
+      ? uncertainty
+        ? "Matched with flags"
+        : "Matched"
+      : dup
+        ? "Possible duplicate"
+        : overlap
+          ? "Ambiguous"
+          : truncated || c.flags.includes("PO reference conflict")
+            ? "Needs review"
+            : !c.exact
+              ? Math.abs(sum(c.q)) < Math.abs(sum(c.p))
+                ? "Partial match"
+                : "Amount mismatch"
+              : c.flags.includes("Late PO")
+                ? "Late PO"
+                : c.score >= config.autoThreshold
+                  ? "Matched"
+                  : "Needs review";
     output.push(
       result(
         c.q,
@@ -351,7 +509,14 @@ export function reconcile(
           ...c.reasons,
           ...(overlap
             ? [
-                "Competing candidates overlap within the ambiguity margin; human review required.",
+                automatic
+                  ? `${alternatives.length} competing candidate(s) within ${config.ambiguityMargin} points. Alternatives: ${alternatives
+                      .slice(0, 5)
+                      .map((o) => `${o.key} (${o.score}%)`)
+                      .join(
+                        "; ",
+                      )}${alternatives.length > 5 ? "; additional candidates omitted" : ""}.`
+                  : "Competing candidates overlap within the ambiguity margin; human review required.",
               ]
             : []),
           ...(dup
@@ -361,11 +526,26 @@ export function reconcile(
             : []),
           ...(truncated
             ? [
-                "Group search exceeded 14 candidates; automatic matching disabled.",
+                automatic
+                  ? "The bounded group search was incomplete. The selected vendor and amount match meets the threshold; the limitation is flagged for an optional check."
+                  : matchAndFlag
+                    ? "Group search was limited; this candidate did not qualify for automatic matching."
+                    : "Group search exceeded 14 candidates; automatic matching disabled.",
+              ]
+            : []),
+          ...(automatic
+            ? [
+                "Automatically reconciled under Match and flag policy. Flags are informational; individual confirmation is not required.",
+                "Selection preference: shared PO reference, verified card-user/PO-technician agreement, fewer records, confidence, closest dates, then stable source IDs. These preferences do not add confidence points.",
+                c.identity > 0
+                  ? "The linked card-user and PO-technician identities agree."
+                  : c.identity < 0
+                    ? "The selected PO technician differs from the mapped card user; attribution follows the card user and is flagged."
+                    : "A complete card-user/PO-technician identity comparison was unavailable.",
               ]
             : []),
         ],
-        c.flags,
+        flags,
       ),
     );
     ids(c).forEach((id) => consumed.add(id));
@@ -390,8 +570,18 @@ export function reconcile(
               ? "Refund / credit identified, but no compatible credit purchase order was found. Review its allocation; the negative amount is retained."
               : "No available compatible purchase order found.",
           ...(q.amount < 0 ? [] : [`Grace period: ${config.graceDays} days.`]),
+          ...(matchAndFlag && bounded.has(q.id)
+            ? [
+                "The bounded group search was incomplete; no qualifying match was selected.",
+              ]
+            : []),
         ],
-        q.amount < 0 ? ["Unallocated refund / credit"] : [],
+        [
+          ...(q.amount < 0 ? ["Unallocated refund / credit"] : []),
+          ...(matchAndFlag && bounded.has(q.id)
+            ? ["Group search limited"]
+            : []),
+        ],
       ),
     );
   }
@@ -416,7 +606,13 @@ export function reconcile(
           : [
               "No available compatible posted card purchase in the imported selected card accounts.",
               `Grace period: ${config.graceDays} days.`,
+              ...(matchAndFlag && bounded.has(p.id)
+                ? [
+                    "The bounded group search was incomplete; no qualifying match was selected.",
+                  ]
+                : []),
             ],
+        matchAndFlag && bounded.has(p.id) ? ["Group search limited"] : [],
       ),
     );
   }

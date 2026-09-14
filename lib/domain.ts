@@ -63,6 +63,7 @@ export type CardMapping = z.infer<typeof cardMappingSchema> & {
   through?: string;
 };
 export const configSchema = z.object({
+  automationMode: z.enum(["strict", "match-and-flag"]).default("strict"),
   windowDays: z.number().int().min(1).max(90),
   graceDays: z.number().int().min(0).max(30),
   lateDays: z.number().int().min(0).max(30),
@@ -84,6 +85,7 @@ export const configSchema = z.object({
 });
 export type Config = z.infer<typeof configSchema>;
 export const defaults: Config = {
+  automationMode: "strict",
   windowDays: 21,
   graceDays: 5,
   lateDays: 2,

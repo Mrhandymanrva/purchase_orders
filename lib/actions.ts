@@ -237,9 +237,36 @@ export function applyAction(
   if (action.type === "config") {
     const before = state.config;
     state.config = action.config;
+    const evaluate = (config: State["config"]) =>
+      reconcile(
+        state.records,
+        config,
+        state.rules,
+        asOf,
+        state.decisions,
+        state.coverage,
+      );
+    const priorResults = evaluate(before),
+      results = evaluate(state.config);
+    const counts = (rows: typeof results) =>
+      rows.reduce<Record<string, number>>(
+        (all, r) => ({ ...all, [r.status]: (all[r.status] || 0) + 1 }),
+        {},
+      );
     appendAudit(state, actor, "Policy updated", {
       before,
       after: state.config,
+      engine: ENGINE_VERSION,
+      asOf,
+      coverage: state.coverage,
+      ruleIds: state.rules.filter((r) => r.approved).map((r) => r.id),
+      sourceFingerprint: fingerprint(
+        state.records,
+        state.records.map((r) => r.id),
+      ),
+      statusCountsBefore: counts(priorResults),
+      statusCountsAfter: counts(results),
+      results,
     });
   }
   if (action.type === "suggest-rule") {

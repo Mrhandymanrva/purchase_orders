@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { RecordItem, Result, State } from "./domain";
 import { classifyVanStock, VAN_STOCK_RULE } from "./van-stock";
+import { isReconciled } from "./reconciliation-status";
 export const periodSchema = z.object({
   unit: z.enum(["week", "month", "quarter", "year"]),
   year: z.number().int().min(2000).max(2100),
@@ -127,8 +128,7 @@ export function scorecard(
   }
   const poLinks = new Map<string, Result>();
   for (const r of results)
-    if (["Matched", "Confirmed"].includes(r.status))
-      for (const id of r.pos) poLinks.set(id, r);
+    if (isReconciled(r.status)) for (const id of r.pos) poLinks.set(id, r);
   for (const record of state.records) {
     if (record.date < range.from || record.date > range.to) continue;
     const classification = classifyVanStock(record, state);
@@ -163,6 +163,8 @@ export function scorecard(
         owner = ensure("unassigned-po", "Unassigned POs", "Unassigned");
         basis = "No ST technician or reconciled card user";
       }
+      if (link?.status === "Matched with flags")
+        basis += ` (matched with flags: ${link.flags.join("; ")})`;
       owner.poTotal += record.amount;
       owner.poCount++;
       if (classification.unknownType) owner.unknownPoTypeCount++;

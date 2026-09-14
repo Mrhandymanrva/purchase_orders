@@ -25,6 +25,7 @@ import {
   ownershipLabel,
   filterResults,
   needsReview,
+  isReconciled,
 } from "@/lib/report";
 import CardMappings from "./card-mappings";
 import TechnicianScorecard from "./scorecard";
@@ -277,15 +278,26 @@ export default function Page() {
                   <span>Reconciled</span>
                   <strong className="green">
                     {
-                      scopedResults.filter((r) =>
-                        ["Matched", "Confirmed", "No PO required"].includes(
-                          r.status,
-                        ),
+                      scopedResults.filter(
+                        (r) =>
+                          isReconciled(r.status) ||
+                          r.status === "No PO required",
                       ).length
                     }
                     <em> groups</em>
                   </strong>
                   <small>Matched or approved exceptions</small>
+                  <button
+                    className="text-button"
+                    onClick={() => setFilter("Matched with flags")}
+                  >
+                    {
+                      scopedResults.filter(
+                        (r) => r.status === "Matched with flags",
+                      ).length
+                    }{" "}
+                    matched with flags
+                  </button>
                 </div>
                 <div>
                   <span>Needs review</span>
@@ -363,18 +375,27 @@ export default function Page() {
               <section className="table-card">
                 <div className="table-top">
                   <div className="tabs">
-                    {["All items", "Needs review", "Matched", "Missing PO"].map(
-                      (s) => (
-                        <button
-                          className={filter === s ? "selected" : ""}
-                          onClick={() => setFilter(s)}
-                          key={s}
-                        >
-                          {s}
-                          {s === "All items" && <span>{results.length}</span>}
-                        </button>
-                      ),
-                    )}
+                    {[
+                      "All items",
+                      "Needs review",
+                      "Matched",
+                      "Matched with flags",
+                      "Missing PO",
+                    ].map((s) => (
+                      <button
+                        className={filter === s ? "selected" : ""}
+                        onClick={() => setFilter(s)}
+                        key={s}
+                      >
+                        {s}
+                        {s === "All items" && <span>{results.length}</span>}
+                        {s === "Matched with flags" && (
+                          <span>
+                            {scopedResults.filter((r) => r.status === s).length}
+                          </span>
+                        )}
+                      </button>
+                    ))}
                   </div>
                   <div className="search">
                     <Search size={16} />
@@ -415,6 +436,8 @@ export default function Page() {
                       new Set([
                         "All items",
                         "Needs review",
+                        "Matched",
+                        "Matched with flags",
                         ...results.map((r) => r.status),
                       ]),
                     ).map((s) => (
@@ -510,13 +533,14 @@ export default function Page() {
                           </td>
                           <td>
                             <span className={"badge " + statusClass(r.status)}>
-                              {r.status === "Matched" && <Check size={12} />}{" "}
+                              {isReconciled(r.status) && <Check size={12} />}{" "}
                               {r.status}
                             </span>
-                            {r.flags.includes("Late PO") &&
-                              r.status !== "Late PO" && (
-                                <small className="late">Late PO</small>
-                              )}
+                            {r.flags.length > 0 && (
+                              <small className="match-flags">
+                                {r.flags.join(" · ")}
+                              </small>
+                            )}
                           </td>
                           <td>
                             {r.score > 0 ? (
@@ -568,7 +592,10 @@ export default function Page() {
             <div className="settings-grid">
               <section className="panel">
                 <h2>Matching policy</h2>
-                <p>Changes apply on the next run. Weights must total 100.</p>
+                <p>
+                  Changes apply to imported records when you save. Weights must
+                  total 100.
+                </p>
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
@@ -577,6 +604,7 @@ export default function Page() {
                       type: "config",
                       config: {
                         ...state.config,
+                        automationMode: f.get("automationMode"),
                         ...Object.fromEntries(
                           [
                             "windowDays",
@@ -599,8 +627,30 @@ export default function Page() {
                   }}
                   key={state.revision}
                 >
+                  <label className="field">
+                    Automation policy
+                    <select
+                      name="automationMode"
+                      defaultValue={state.config.automationMode || "strict"}
+                    >
+                      <option value="match-and-flag">
+                        Match and flag uncertainty
+                      </option>
+                      <option value="strict">
+                        Require review for uncertainty
+                      </option>
+                    </select>
+                  </label>
+                  <p className="hint">
+                    Match and flag automatically reconciles balanced matches at
+                    or above your threshold. Close alternatives, late POs,
+                    technician differences, and limited group searches remain
+                    visible as flags. Missing POs, amount differences,
+                    conflicting references, and possible duplicate charges still
+                    need attention.
+                  </p>
                   {Object.entries(state.config)
-                    .filter(([k]) => k !== "weights")
+                    .filter(([k]) => k !== "weights" && k !== "automationMode")
                     .map(([k, v]) => (
                       <label className="field" key={k}>
                         {
@@ -873,6 +923,13 @@ export default function Page() {
             <span className={"badge " + statusClass(active.status)}>
               {active.status}
             </span>
+            {active.status === "Matched with flags" && (
+              <p className="notice">
+                Automatically reconciled. No individual confirmation is
+                required. The flags below explain uncertainty for optional
+                inspection.
+              </p>
+            )}
             <section>
               <h3>
                 Match evidence <span>{active.score}%</span>
@@ -899,7 +956,7 @@ export default function Page() {
               </p>
               <p>{active.pos.join(", ") || "No linked purchase order"}</p>
               <small>
-                {["Matched", "Confirmed"].includes(active.status)
+                {isReconciled(active.status)
                   ? "Reconciled link"
                   : "Proposed link; review required before confirmation."}
               </small>
@@ -1036,7 +1093,7 @@ export default function Page() {
   );
 }
 function statusClass(s: string) {
-  return ["Matched", "Confirmed", "No PO required"].includes(s)
+  return isReconciled(s) || s === "No PO required"
     ? "success"
     : [
           "Missing vendor",
