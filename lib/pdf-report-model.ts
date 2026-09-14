@@ -11,6 +11,7 @@ import { scorecard, periodRange, type Period } from "./scorecard";
 import { vendorDisplay } from "./vendor-evidence";
 import { poTechnician } from "./po-technician";
 import { spendCategoryLabel } from "./spend-categories";
+import { statusLabel } from "./reconciliation-status";
 
 export type PDFColumn = {
   label: string;
@@ -60,7 +61,7 @@ export function reconciliationPDFModel(
   const sum = (rows: RecordItem[]) => rows.reduce((n, r) => n + r.amount, 0);
   const filters = [
     `Individual: ${filter.individual || "All individuals"}`,
-    `Status: ${filter.status || "All items"}`,
+    `Status: ${statusLabel(filter.status || "All items")}`,
     `Dates: ${filter.from || "Beginning of imported history"} to ${filter.to || "Latest imported date"}`,
     ...(filter.query ? [`Search: ${filter.query}`] : []),
   ];
@@ -129,7 +130,7 @@ export function reconciliationPDFModel(
           q.length ? money(sum(q)) : "-",
           p.length ? money(sum(p)) : "-",
           [
-            r.status,
+            statusLabel(r.status),
             ...(r.categoryId
               ? ["Category: " + spendCategoryLabel(state, r)]
               : []),

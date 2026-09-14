@@ -2,7 +2,11 @@ import { z } from "zod";
 import { spendCategoryLabel } from "./spend-categories";
 import type { State, Result, RecordItem } from "./domain";
 import { vendorBasis } from "./vendor-evidence";
-import { isReconciled, needsReview } from "./reconciliation-status";
+import {
+  isReconciled,
+  needsReview,
+  statusLabel,
+} from "./reconciliation-status";
 import { ENGINE_VERSION } from "./engine";
 import {
   individualMatches,
@@ -129,7 +133,7 @@ function sortResults(results: Result[], state: State, filter: ReportFilter) {
       case "amount":
         return reportAmount(state, r, filter);
       case "status":
-        return r.status;
+        return statusLabel(r.status);
       case "category":
         return spendCategoryLabel(state, r) || null;
       case "score":
@@ -250,7 +254,7 @@ export function reportCSV(
             ? "Reconciled"
             : "Proposed — review required"
           : "No linked PO",
-        r.status,
+        statusLabel(r.status),
         r.score,
         q.description,
         vendorBasis(q),
@@ -279,7 +283,7 @@ export function reportCSV(
         0,
         r.pos.join("; "),
         "Unlinked PO",
-        r.status,
+        statusLabel(r.status),
         r.score,
         "",
         "ServiceTitan vendor",

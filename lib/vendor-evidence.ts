@@ -28,10 +28,22 @@ export function vendorDisplay(record: RecordItem): string {
     : record.vendor;
 }
 
+export function importedPayeeName(record: RecordItem): string {
+  return record.vendorMissing || record.vendorEvidence
+    ? "Not supplied in import"
+    : record.vendor;
+}
+export function missingVendorExplanation(record: RecordItem): string {
+  if (record.source !== "qbo")
+    return "The import has no usable ServiceTitan vendor name. Automatic vendor matching is unavailable.";
+  return record.description.trim()
+    ? "Merchant text is present in the transaction description, but the import does not contain a separate QuickBooks payee name. The description is shown above; it is not yet a confirmed vendor for automatic PO matching."
+    : "The import contains neither a QuickBooks payee name nor a usable transaction description. Automatic vendor matching is unavailable.";
+}
 export function vendorBasis(record: RecordItem): string {
   if (record.vendorEvidence)
-    return "Recognized from QuickBooks description; payee not assigned";
+    return "Recognized from QuickBooks description; payee name not supplied in import";
   if (record.vendorMissing)
-    return "QuickBooks payee not assigned; vendor unverified";
+    return "Payee name not supplied in import; vendor unverified";
   return record.source === "qbo" ? "QuickBooks payee" : "ServiceTitan vendor";
 }

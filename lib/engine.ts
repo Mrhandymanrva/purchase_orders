@@ -9,9 +9,9 @@ import {
   type Decision,
   type State,
 } from "./domain";
-import { vendorDisplay } from "./vendor-evidence";
+import { vendorDisplay, missingVendorExplanation } from "./vendor-evidence";
 import { descriptionKey, ruleMatchField } from "./vendor-rule";
-export const ENGINE_VERSION = "1.4.0";
+export const ENGINE_VERSION = "1.4.1";
 export function decisionFitsPolicy(
   decision: Pick<Decision, "charges" | "pos">,
   policy: Config,
@@ -192,7 +192,7 @@ export function reconcile(
           .filter((r) => r.vendorEvidence)
           .map(
             (r) =>
-              `${r.id}: ${r.vendor} recognized from QuickBooks description "${r.vendorEvidence!.text}" (${r.vendorEvidence!.rule}). The QuickBooks payee field is unassigned.`,
+              `${r.id}: ${r.vendor} recognized from QuickBooks description "${r.vendorEvidence!.text}" (${r.vendorEvidence!.rule}). A separate QuickBooks payee name was not supplied in the import.`,
           ),
         ...reasons,
       ],
@@ -282,7 +282,7 @@ export function reconcile(
         result([q], [], "No PO required", 0, [
           `Approved rule ${rule.id}: ${rule.description}`,
           ruleMatchField(rule) === "description"
-            ? `Explicitly approved full QuickBooks description: "${rule.pattern}". Payee remains unassigned; no vendor identity was inferred.`
+            ? `Explicitly approved full QuickBooks description: "${rule.pattern}". Imported payee name remains unavailable; no vendor identity was inferred.`
             : `Approved vendor exemption: ${rule.pattern}.`,
           rule.maxCents === null
             ? "Approved merchant exemption has no amount limit."
@@ -306,15 +306,13 @@ export function reconcile(
             : "Missing vendor",
         0,
         [
-          r.description.trim()
-            ? "QuickBooks has no assigned payee. Automatic PO matching is disabled. An explicit full-description No-PO rule can exempt eligible purchases."
-            : "The source has no usable vendor identity. Automatic matching and vendor exemptions are disabled.",
+          missingVendorExplanation(r),
           ...(duplicate.has(r.id)
             ? [
                 "Another charge has the same description, account, date and amount. No-PO rules do not hide possible duplicates.",
               ]
             : []),
-          "Review the source evidence or create a rule from the detail panel.",
+          "Use Manual review to link a verified PO. If this purchase does not need a PO, save a Spend category or an explicit vendor exclusion rule in this panel.",
         ],
         r.amount < 0 ? ["Unallocated refund / credit"] : [],
       ),

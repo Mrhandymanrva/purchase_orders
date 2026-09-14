@@ -72,7 +72,7 @@ export default function VendorExclusionRule({
           <p className="rule-pattern">{draft.pattern}</p>
           <p className="hint">
             {description
-              ? "Applies to purchases without a QuickBooks payee whose full description matches this text, ignoring case and extra spaces. Store numbers and punctuation must match."
+              ? "Applies to purchases whose imported QuickBooks payee name is unavailable and whose full description matches this text, ignoring case and extra spaces. Store numbers and punctuation must match."
               : "Applies to purchases from this vendor across all cards, using your approved vendor aliases."}
           </p>
           <label className="rule-limit">

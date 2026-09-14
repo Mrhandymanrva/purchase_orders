@@ -140,7 +140,7 @@ test("missing-vendor review remains in reports and cannot produce exemption sugg
   const results = reconcile(s.records, defaults, [], "2026-09-13");
   assert.equal(filterResults(results, s, { status: "Needs review" }).length, 3);
   assert.deepEqual(suggestRules(s, results), []);
-  assert.ok(reportCSV(s, results, {}).includes("Payee not assigned"));
+  assert.ok(reportCSV(s, results, {}).includes("Vendor needs confirmation"));
 });
 
 test("an explicit manual review of a missing vendor is audited by the source fingerprint and invalidates when vendor evidence changes", () => {

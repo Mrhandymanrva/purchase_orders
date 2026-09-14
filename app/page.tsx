@@ -22,7 +22,8 @@ import {
 import { money, type State, type Result } from "@/lib/domain";
 import { seed } from "@/lib/seed";
 import { reconcile, ENGINE_VERSION } from "@/lib/engine";
-import { vendorBasis } from "@/lib/vendor-evidence";
+import { vendorBasis, importedPayeeName } from "@/lib/vendor-evidence";
+import { statusLabel } from "@/lib/reconciliation-status";
 import {
   chargeInReport,
   ownershipLabel,
@@ -465,7 +466,9 @@ export default function Page() {
                         ...results.map((r) => r.status),
                       ]),
                     ).map((s) => (
-                      <option key={s}>{s}</option>
+                      <option key={s} value={s}>
+                        {statusLabel(s)}
+                      </option>
                     ))}
                   </select>
                   <label>
@@ -582,7 +585,7 @@ export default function Page() {
                           <td>
                             <span className={"badge " + statusClass(r.status)}>
                               {isReconciled(r.status) && <Check size={12} />}{" "}
-                              {r.status}
+                              {statusLabel(r.status)}
                             </span>
                             {r.flags.length > 0 && (
                               <small className="match-flags">
@@ -788,8 +791,8 @@ export default function Page() {
                     <p>{r.description}</p>
                     {r.matchField === "description" && (
                       <small>
-                        Matches the full QuickBooks description only when no
-                        payee is assigned.
+                        Matches the full QuickBooks description only when the
+                        imported payee name is unavailable.
                       </small>
                     )}
                     {r.type === "no-po" && (
@@ -845,7 +848,7 @@ export default function Page() {
                     <select name="matchField">
                       <option value="vendor">Vendor name</option>
                       <option value="description">
-                        QuickBooks description (unassigned payee)
+                        QuickBooks description (payee name unavailable)
                       </option>
                     </select>
                   </label>
@@ -1016,7 +1019,7 @@ export default function Page() {
             <h2>{active.vendor}</h2>
             <div className="detail-amount">{money(active.amount)}</div>
             <span className={"badge " + statusClass(active.status)}>
-              {active.status}
+              {statusLabel(active.status)}
             </span>
             {active.status === "Matched with flags" && (
               <p className="notice">
@@ -1092,10 +1095,25 @@ export default function Page() {
                     {r.source === "st" && r.poStatus && (
                       <small>ServiceTitan PO status: {r.poStatus}</small>
                     )}
-                    <p>{r.description}</p>
+                    {r.source === "qbo" ? (
+                      <div className="source-vendor-fields">
+                        <p>
+                          <strong>QuickBooks payee name</strong>
+                          {importedPayeeName(r)}
+                        </p>
+                        <p>
+                          <strong>Transaction description</strong>
+                          {r.description || "Not supplied in import"}
+                        </p>
+                      </div>
+                    ) : (
+                      <p>{r.description}</p>
+                    )}
                     {r.source === "qbo" && (
                       <>
-                        <small>Vendor evidence: {vendorBasis(r)}</small>
+                        <small className="source-evidence">
+                          Vendor evidence: {vendorBasis(r)}
+                        </small>
                         <small>
                           Card user: {r.cardUser || "Unassigned"} ·{" "}
                           {r.ownershipSource || "Unassigned"}

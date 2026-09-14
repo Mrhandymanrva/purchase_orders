@@ -1535,3 +1535,15 @@ footer,
   gap: 12px;
   flex-wrap: wrap;
 }
+.source-evidence {
+  display: block;
+  margin-bottom: 6px;
+}
+.source-vendor-fields p {
+  overflow-wrap: anywhere;
+}
+
+.source-vendor-fields strong {
+  display: block;
+  margin: 0 0 3px;
+}
