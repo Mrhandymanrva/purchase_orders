@@ -1,4 +1,8 @@
-# Validation record — September 13, 2026
+# Validation record — September 14, 2026
+
+- Engine 1.0.3 adds explicit, unlimited merchant exemptions. Six new automated tests cover uncapped versus capped/zero/pending rules, exact vendor identity, duplicate/refund/zero/missing-vendor safeguards, unchanged financial records and scorecard totals, CSV inclusion, audited pending-rule updates, separate approval, API persistence and invalid limits. The prior 115 tests passed in the full run; all six new tests passed after correcting the API test's local Origin fixture.
+- Browser validation submitted an unlimited Wawa rule using fictional data and verified that it displays “No amount limit” and remains “Awaiting approval.” Existing capped rules retain their limits.
+- A read-only production QuickBooks check identified 21 current purchases across 10 fuel merchants (7-Eleven, Wawa, Shell, BP, Sunoco, Sheetz, Raceway, Murphy Express, Marathon and Kroger Fuel). Every one used the Van Gasoline expense category. The user approved merchant-wide exemptions, including convenience-store purchases, without deleting source purchases or POs.
 
 - Railway production pilot deployed successfully from GitHub to the existing Purchase Orders project. The Docker image built, the pre-deploy migration completed against Railway PostgreSQL, `/api/health` returned 200 with live mode, anonymous `/api/state` returned 401, and authenticated page/state reads returned 200. The workspace was empty (revision 0, no source records or audit events); no sample financial data was seeded.
 - The private Postgres reference, HTTPS origin, operator authentication and 32-byte token encryption key are configured in Railway Variables. Secret values were neither printed nor committed. At the initial deployment, ST/QBO credentials and source account scope were not yet configured, so no financial-source sync was attempted.

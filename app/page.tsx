@@ -655,7 +655,11 @@ export default function Page() {
                     </h3>
                     <p>{r.description}</p>
                     {r.type === "no-po" && (
-                      <small>Limit {money(r.maxCents)}</small>
+                      <small>
+                        {r.maxCents === null
+                          ? "No amount limit"
+                          : `Limit ${money(r.maxCents)}`}
+                      </small>
                     )}
                     {!r.approved && (
                       <button
@@ -680,7 +684,10 @@ export default function Page() {
                         type: f.get("type"),
                         pattern: f.get("pattern"),
                         target: f.get("target"),
-                        maxCents: Math.round(Number(f.get("limit")) * 100),
+                        maxCents:
+                          f.get("type") === "no-po" && f.get("noLimit") === "on"
+                            ? null
+                            : Math.round(Number(f.get("limit")) * 100),
                         description: f.get("description"),
                       },
                     });
@@ -715,6 +722,14 @@ export default function Page() {
                     Reason
                     <input name="description" required minLength={5} />
                   </label>
+                  <label>
+                    <input type="checkbox" name="noLimit" /> No amount limit (No
+                    PO required rules only)
+                  </label>
+                  <p className="muted">
+                    Merchant exemptions include all purchases at that vendor.
+                    Possible duplicates and refunds remain in review.
+                  </p>
                   <button disabled={busy}>Submit for approval</button>
                 </form>
               </section>

@@ -91,7 +91,7 @@ export type Rule = {
   type: "alias" | "no-po";
   pattern: string;
   target: string;
-  maxCents: number;
+  maxCents: number | null;
   approved: boolean;
   description: string;
 };

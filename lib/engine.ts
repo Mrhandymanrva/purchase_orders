@@ -9,7 +9,7 @@ import {
   type Decision,
   type State,
 } from "./domain";
-export const ENGINE_VERSION = "1.0.2";
+export const ENGINE_VERSION = "1.0.3";
 export function normalize(v: string, rules: Rule[] = []): string {
   const clean = (s: string) =>
     s
@@ -176,13 +176,15 @@ export function reconcile(
         r.type === "no-po" &&
         normalize(r.pattern, rules) === normalize(q.vendor, rules) &&
         q.amount > 0 &&
-        q.amount <= r.maxCents,
+        (r.maxCents === null || q.amount <= r.maxCents),
     );
     if (rule) {
       output.push(
         result([q], [], "No PO required", 0, [
           `Approved rule ${rule.id}: ${rule.description}`,
-          `Amount within ${rule.maxCents} cent limit.`,
+          rule.maxCents === null
+            ? "Approved merchant exemption has no amount limit."
+            : `Amount within ${rule.maxCents} cent limit.`,
         ]),
       );
       consumed.add(q.id);

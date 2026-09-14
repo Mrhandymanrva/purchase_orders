@@ -18,7 +18,7 @@ const ruleSchema = z
     type: z.enum(["alias", "no-po"]),
     pattern: z.string().trim().min(1).max(150),
     target: z.string().trim().max(150),
-    maxCents: z.number().int().min(0).max(10000000),
+    maxCents: z.number().int().min(0).max(10000000).nullable(),
     description: z.string().trim().min(5).max(500),
   })
   .refine(
@@ -229,9 +229,35 @@ export function applyAction(
     });
   }
   if (action.type === "suggest-rule") {
-    const rule = { ...action.rule, id: randomUUID(), approved: false };
-    state.rules.push(rule);
-    appendAudit(state, actor, "Rule proposed", rule);
+    const sameVendor = state.rules.filter(
+      (r) =>
+        r.type === action.rule.type &&
+        normalize(r.pattern) === normalize(action.rule.pattern),
+    );
+    if (sameVendor.some((r) => r.approved))
+      throw Error(
+        "An approved rule already uses this vendor; it cannot be changed by submitting a suggestion",
+      );
+    if (sameVendor.length > 1)
+      throw Error(
+        "Multiple pending rules use this vendor. Resolve them before changing the suggestion",
+      );
+    const prior = sameVendor[0];
+    const rule = {
+      ...action.rule,
+      id: prior?.id || randomUUID(),
+      approved: false,
+    };
+    if (prior) {
+      state.rules[state.rules.indexOf(prior)] = rule;
+      appendAudit(state, actor, "Rule suggestion updated", {
+        before: prior,
+        after: rule,
+      });
+    } else {
+      state.rules.push(rule);
+      appendAudit(state, actor, "Rule proposed", rule);
+    }
   }
   if (action.type === "approve-rule") {
     const rule = state.rules.find((r) => r.id === action.id);
