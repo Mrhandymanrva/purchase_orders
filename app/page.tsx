@@ -467,6 +467,7 @@ export default function Page() {
                               onClick={() => {
                                 setSelected(r.id);
                                 setReason("");
+                                setAction("confirm");
                                 setManual("");
                               }}
                             >
@@ -537,6 +538,7 @@ export default function Page() {
                               onClick={() => {
                                 setSelected(r.id);
                                 setReason("");
+                                setAction("confirm");
                                 setManual("");
                               }}
                             >
@@ -990,31 +992,38 @@ export default function Page() {
                   />
                 </label>
               )}
-              <label className="field">
-                Reason (required)
-                <textarea
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  placeholder="Explain the evidence supporting this decision…"
-                  rows={3}
-                />
-              </label>
+              {action === "dismiss" && (
+                <label className="field">
+                  Reason for dismissal (required)
+                  <textarea
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    placeholder="Why should this exception be dismissed?"
+                    rows={3}
+                    maxLength={2000}
+                  />
+                </label>
+              )}
               <button
                 className="primary"
-                disabled={busy || reason.trim().length < 5}
+                disabled={
+                  busy || (action === "dismiss" && reason.trim().length < 5)
+                }
                 onClick={() =>
                   mutate({
                     type: "decision",
                     resultId: active.id,
                     action,
-                    reason,
+                    reason: action === "dismiss" ? reason : undefined,
                     poIds: manual.trim()
                       ? manual.split(",").map((s) => s.trim())
                       : undefined,
                   })
                 }
               >
-                Save review decision
+                {action === "confirm"
+                  ? "Confirm reconciliation"
+                  : "Save review decision"}
               </button>
               <p className="muted">
                 This updates the reconciliation record only.

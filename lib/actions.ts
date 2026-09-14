@@ -25,69 +25,83 @@ const ruleSchema = z
     (r) => r.type !== "alias" || r.target.length > 0,
     "Canonical vendor is required",
   );
-export const actionSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("discover-st-business-units"),
-    revision: z.number().int(),
-  }),
-  z.object({
-    type: z.literal("save-st-business-units"),
-    revision: z.number().int(),
-    businessUnitIds: z.array(z.string().trim().min(1)).min(1).max(50),
-    reason: z.string().trim().min(5).max(500),
-  }),
-  z.object({
-    type: z.literal("refresh-directory"),
-    revision: z.number().int(),
-  }),
-  z.object({
-    type: z.literal("scorecard-settings"),
-    revision: z.number().int(),
-    vanStockTypeIds: z.array(z.string().min(1)).max(50),
-    reason: z.string().trim().min(5).max(500),
-  }),
-  z.object({
-    type: z.literal("save-card-mappings"),
-    revision: z.number().int(),
-    mappings: z.array(cardMappingSchema).min(1).max(500),
-  }),
-  z.object({
-    type: z.literal("save-card-mapping"),
-    revision: z.number().int(),
-    mapping: cardMappingSchema,
-  }),
-  z.object({
-    type: z.literal("assign-card-user"),
-    revision: z.number().int(),
-    chargeId: z.string(),
-    cardUser: z.string().trim().min(2).max(100),
-    reason: z.string().trim().min(5).max(500),
-  }),
-  z.object({
-    type: z.literal("config"),
-    revision: z.number().int(),
-    config: configSchema,
-  }),
-  z.object({
-    type: z.literal("decision"),
-    revision: z.number().int(),
-    resultId: z.string(),
-    action: z.enum(["confirm", "dismiss"]),
-    reason: z.string().trim().min(5).max(2000),
-    poIds: z.array(z.string().trim().min(1)).max(20).optional(),
-  }),
-  z.object({
-    type: z.literal("suggest-rule"),
-    revision: z.number().int(),
-    rule: ruleSchema,
-  }),
-  z.object({
-    type: z.literal("approve-rule"),
-    revision: z.number().int(),
-    id: z.string(),
-  }),
-  z.object({ type: z.literal("sync"), revision: z.number().int() }),
-]);
+export const actionSchema = z
+  .discriminatedUnion("type", [
+    z.object({
+      type: z.literal("discover-st-business-units"),
+      revision: z.number().int(),
+    }),
+    z.object({
+      type: z.literal("save-st-business-units"),
+      revision: z.number().int(),
+      businessUnitIds: z.array(z.string().trim().min(1)).min(1).max(50),
+      reason: z.string().trim().min(5).max(500),
+    }),
+    z.object({
+      type: z.literal("refresh-directory"),
+      revision: z.number().int(),
+    }),
+    z.object({
+      type: z.literal("scorecard-settings"),
+      revision: z.number().int(),
+      vanStockTypeIds: z.array(z.string().min(1)).max(50),
+      reason: z.string().trim().min(5).max(500),
+    }),
+    z.object({
+      type: z.literal("save-card-mappings"),
+      revision: z.number().int(),
+      mappings: z.array(cardMappingSchema).min(1).max(500),
+    }),
+    z.object({
+      type: z.literal("save-card-mapping"),
+      revision: z.number().int(),
+      mapping: cardMappingSchema,
+    }),
+    z.object({
+      type: z.literal("assign-card-user"),
+      revision: z.number().int(),
+      chargeId: z.string(),
+      cardUser: z.string().trim().min(2).max(100),
+      reason: z.string().trim().min(5).max(500),
+    }),
+    z.object({
+      type: z.literal("config"),
+      revision: z.number().int(),
+      config: configSchema,
+    }),
+    z.object({
+      type: z.literal("decision"),
+      revision: z.number().int(),
+      resultId: z.string(),
+      action: z.enum(["confirm", "dismiss"]),
+      reason: z.string().trim().max(2000).default(""),
+      poIds: z.array(z.string().trim().min(1)).max(20).optional(),
+    }),
+    z.object({
+      type: z.literal("suggest-rule"),
+      revision: z.number().int(),
+      rule: ruleSchema,
+    }),
+    z.object({
+      type: z.literal("approve-rule"),
+      revision: z.number().int(),
+      id: z.string(),
+    }),
+    z.object({ type: z.literal("sync"), revision: z.number().int() }),
+  ])
+  .superRefine((action, ctx) => {
+    if (
+      action.type === "decision" &&
+      action.action === "dismiss" &&
+      action.reason.length < 5
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["reason"],
+        message: "Enter a reason for dismissing the exception (5+ characters).",
+      });
+    }
+  });
 export type Action = z.infer<typeof actionSchema>;
 export function applyAction(
   state: State,
@@ -311,7 +325,10 @@ export function applyAction(
       resultId: JSON.stringify([r.charges.slice().sort(), pos.slice().sort()]),
       fingerprint: fingerprint(state.records, ids),
       action: action.action,
-      reason: action.reason,
+      reason:
+        action.action === "confirm" && !action.reason.trim()
+          ? "Confirmed in reconciliation review."
+          : action.reason,
       actor,
       at: new Date().toISOString(),
       charges: r.charges,
