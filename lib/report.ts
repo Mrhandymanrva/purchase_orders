@@ -3,6 +3,11 @@ import type { State, Result, RecordItem } from "./domain";
 import { vendorBasis } from "./vendor-evidence";
 import { isReconciled, needsReview } from "./reconciliation-status";
 import { ENGINE_VERSION } from "./engine";
+import {
+  individualMatches,
+  poTechnician,
+  poTechnicianLabel,
+} from "./po-technician";
 export { isReconciled, isReviewed, needsReview } from "./reconciliation-status";
 export function cardUsers(state: State, result: Result) {
   return Array.from(
@@ -20,6 +25,7 @@ export function ownershipLabel(state: State, result: Result) {
 export const reportColumns = [
   { key: "vendor", label: "Vendor / transaction" },
   { key: "cardUser", label: "Card user" },
+  { key: "poTechnician", label: "PO technician" },
   { key: "date", label: "Date" },
   { key: "amount", label: "Amount" },
   { key: "status", label: "Status" },
@@ -28,7 +34,16 @@ export const reportColumns = [
 ] as const;
 export const reportSortSchema = z.object({
   sortBy: z
-    .enum(["vendor", "cardUser", "date", "amount", "status", "score", "po"])
+    .enum([
+      "vendor",
+      "cardUser",
+      "poTechnician",
+      "date",
+      "amount",
+      "status",
+      "score",
+      "po",
+    ])
     .default("date"),
   sortDirection: z.enum(["asc", "desc"]).default("desc"),
 });
@@ -56,13 +71,24 @@ export type ReportFilter = Partial<ReportSort> & {
   from?: string;
   to?: string;
 };
-export function chargeInReport(q: RecordItem, f: ReportFilter) {
+export function chargeInReport(q: RecordItem, f: ReportFilter, state?: State) {
   return (
-    (!f.individual ||
-      f.individual === "All individuals" ||
-      (q.cardUser || "Unassigned") === f.individual) &&
+    individualMatches(
+      state,
+      q.cardPersonId,
+      q.cardUser || "Unassigned",
+      f.individual,
+    ) &&
     (!f.from || q.date >= f.from) &&
     (!f.to || q.date <= f.to)
+  );
+}
+export function poInReport(state: State, po: RecordItem, f: ReportFilter) {
+  const person = poTechnician(state, po);
+  return (
+    individualMatches(state, person.id, person.name, f.individual) &&
+    (!f.from || po.date >= f.from) &&
+    (!f.to || po.date <= f.to)
   );
 }
 // Use the same filtered group amount in the register and its sorting. Exports
@@ -75,7 +101,8 @@ export function reportAmount(
   return result.charges.length
     ? state.records
         .filter(
-          (q) => result.charges.includes(q.id) && chargeInReport(q, filter),
+          (q) =>
+            result.charges.includes(q.id) && chargeInReport(q, filter, state),
         )
         .reduce((n, q) => n + q.amount, 0)
     : result.amount;
@@ -92,6 +119,8 @@ function sortResults(results: Result[], state: State, filter: ReportFilter) {
         return r.vendor;
       case "cardUser":
         return ownershipLabel(state, r);
+      case "poTechnician":
+        return r.pos.length ? poTechnicianLabel(state, r) : null;
       case "date":
         return r.date;
       case "amount":
@@ -133,10 +162,10 @@ export function filterResults(
     const relevant = r.charges.length
       ? state.records
           .filter((q) => r.charges.includes(q.id))
-          .some((q) => chargeInReport(q, f))
-      : (!f.individual || f.individual === "All individuals") &&
-        (!f.from || r.date >= f.from) &&
-        (!f.to || r.date <= f.to);
+          .some((q) => chargeInReport(q, f, state))
+      : state.records
+          .filter((p) => r.pos.includes(p.id))
+          .some((p) => poInReport(state, p, f));
     return (
       relevant &&
       (!f.status ||
@@ -147,7 +176,7 @@ export function filterResults(
             ? isReconciled(r.status)
             : r.status === f.status)) &&
       (!f.query ||
-        `${r.vendor} ${r.id} ${r.pos.join(" ")} ${r.charges.join(" ")} ${ownershipLabel(state, r)}`
+        `${r.vendor} ${r.id} ${r.pos.join(" ")} ${r.charges.join(" ")} ${ownershipLabel(state, r)} ${poTechnicianLabel(state, r)}`
           .toLowerCase()
           .includes(f.query.toLowerCase()))
     );
@@ -191,13 +220,15 @@ export function reportCSV(
       "Flags",
       "Match evidence",
       "Engine version",
+      "PO technician",
+      "ST technician ID",
     ],
   ];
   for (const r of selected) {
     for (const id of r.charges) {
       const q = state.records.find((q) => q.id === id)!;
       const user = q.cardUser || "Unassigned";
-      if (!chargeInReport(q, filter)) continue;
+      if (!chargeInReport(q, filter, state)) continue;
       rows.push([
         user,
         q.ownershipSource || "Unassigned",
@@ -221,12 +252,15 @@ export function reportCSV(
         r.flags.join("; "),
         r.reasons.join(" "),
         ENGINE_VERSION,
+        r.pos.length ? poTechnicianLabel(state, r) : "",
+        r.pos
+          .map(
+            (id) => state.records.find((p) => p.id === id)?.technicianId || "",
+          )
+          .join("; "),
       ]);
     }
-    if (
-      !r.charges.length &&
-      (!filter.individual || filter.individual === "All individuals")
-    )
+    if (!r.charges.length)
       rows.push([
         "No card charge",
         "",
@@ -246,6 +280,12 @@ export function reportCSV(
         r.flags.join("; "),
         r.reasons.join(" "),
         ENGINE_VERSION,
+        poTechnicianLabel(state, r),
+        r.pos
+          .map(
+            (id) => state.records.find((p) => p.id === id)?.technicianId || "",
+          )
+          .join("; "),
       ]);
   }
   return "\uFEFF" + rows.map((row) => row.map(cell).join(",")).join("\r\n");

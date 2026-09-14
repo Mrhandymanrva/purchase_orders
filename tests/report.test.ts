@@ -5,17 +5,25 @@ import { reconcile } from "../lib/engine";
 import { cardUsers, filterResults, reportCSV } from "../lib/report";
 import { applyAction } from "../lib/actions";
 import { mapQBO } from "../lib/integrations";
+import { poTechnicians } from "../lib/po-technician";
 test("individual filter links POs to actual charge owner", () => {
   const state = seed(),
     results = reconcile(state.records, state.config, state.rules, "2026-09-13");
   const filtered = filterResults(results, state, { individual: "Alex Morgan" });
   assert.ok(filtered.length > 0);
-  assert.ok(filtered.every((r) => cardUsers(state, r).includes("Alex Morgan")));
+  assert.ok(
+    filtered.every((r) =>
+      (r.charges.length
+        ? cardUsers(state, r)
+        : poTechnicians(state, r)
+      ).includes("Alex Morgan"),
+    ),
+  );
   assert.ok(filtered.some((r) => r.pos.includes("PO-2041")));
   const csv = reportCSV(state, results, { individual: "Alex Morgan" });
   assert.ok(csv.includes("PO-2041"));
   assert.ok(!csv.includes("Chris Parker"));
-  assert.equal(csv.split("\r\n").length - 1, 5);
+  assert.equal(csv.split("\r\n").length - 1, 7);
 });
 test("shared-PO report includes only selected person charges and retains group link", () => {
   const state = seed();

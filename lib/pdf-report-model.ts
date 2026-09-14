@@ -9,6 +9,7 @@ import {
 } from "./report";
 import { scorecard, periodRange, type Period } from "./scorecard";
 import { vendorDisplay } from "./vendor-evidence";
+import { poTechnician } from "./po-technician";
 
 export type PDFColumn = {
   label: string;
@@ -42,7 +43,7 @@ export function reconciliationPDFModel(
     result,
     charges: result.charges
       .map((id) => byId.get(id)!)
-      .filter((q) => chargeInReport(q, filter)),
+      .filter((q) => chargeInReport(q, filter, state)),
     pos: result.pos.map((id) => byId.get(id)!),
   }));
   const charges = [
@@ -92,6 +93,7 @@ export function reconciliationPDFModel(
     ],
     notes: [
       "Totals follow every filter in this export. Credits reduce card spend. Each linked PO is counted once; related PO value is not a technician allocation.",
+      "The individual filter selects card purchases by card user and unlinked POs by ST technician. PO technician names come from the PO identity; they do not change the card user. Unavailable names retain their ST technician ID.",
       "Outside card coverage items are retained for reference and excluded from review and variance. A proposed link is not a confirmed match.",
       `${groups.filter((g) => g.result.status === "Matched with flags").length} groups matched with flags: these are reconciled automatically; flags explain uncertainty and do not require individual confirmation.`,
       ...(partial
@@ -136,7 +138,7 @@ export function reconciliationPDFModel(
           p
             .map(
               (x) =>
-                `${x.reference || x.id}${x.reference && x.reference !== x.id ? `\n${x.id}` : ""}`,
+                `${x.reference || x.id}${x.reference && x.reference !== x.id ? `\n${x.id}` : ""}\nPO technician: ${poTechnician(state, x).name}`,
             )
             .join("\n") || "No linked PO",
         ]),

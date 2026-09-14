@@ -24,7 +24,7 @@ import { seed } from "@/lib/seed";
 import { reconcile, ENGINE_VERSION } from "@/lib/engine";
 import { vendorBasis } from "@/lib/vendor-evidence";
 import {
-  cardUsers,
+  chargeInReport,
   ownershipLabel,
   filterResults,
   needsReview,
@@ -34,6 +34,11 @@ import {
   nextReportSort,
   type ReportSort,
 } from "@/lib/report";
+import {
+  poTechnician,
+  poTechnicianLabel,
+  reconciliationIndividuals,
+} from "@/lib/po-technician";
 import CardMappings from "./card-mappings";
 import TechnicianScorecard from "./scorecard";
 import LegalLinks from "./legal-links";
@@ -84,12 +89,7 @@ export default function Page() {
   };
   const visible = filterResults(results, state, reportFilter);
   const scopedRecords = state.records.filter(
-    (r) =>
-      r.source === "qbo" &&
-      (individual === "All individuals" ||
-        (r.cardUser || "Unassigned") === individual) &&
-      (!dateFrom || r.date >= dateFrom) &&
-      (!dateTo || r.date <= dateTo),
+    (r) => r.source === "qbo" && chargeInReport(r, reportFilter, state),
   );
   const scopedResults = filterResults(results, state, {
     individual,
@@ -415,7 +415,7 @@ export default function Page() {
                     <Search size={16} />
                     <input
                       aria-label="Search reconciliation"
-                      placeholder="Search vendor or reference…"
+                      placeholder="Search vendor, person or reference…"
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
                     />
@@ -424,19 +424,13 @@ export default function Page() {
                 <div className="filters">
                   <SlidersHorizontal size={16} />
                   <select
-                    aria-label="Card user filter"
+                    aria-label="Individual filter"
                     value={individual}
                     onChange={(e) => setIndividual(e.target.value)}
                   >
                     {[
                       "All individuals",
-                      ...Array.from(
-                        new Set(
-                          state.records
-                            .filter((r) => r.source === "qbo")
-                            .map((r) => r.cardUser || "Unassigned"),
-                        ),
-                      ).sort(),
+                      ...reconciliationIndividuals(state),
                     ].map((s) => (
                       <option key={s}>{s}</option>
                     ))}
@@ -556,6 +550,9 @@ export default function Page() {
                           </td>
                           <td className="card-user">
                             {ownershipLabel(state, r)}
+                          </td>
+                          <td className="card-user">
+                            {poTechnicianLabel(state, r)}
                           </td>
                           <td>
                             {new Date(r.date + "T12:00:00").toLocaleDateString(
@@ -1001,9 +998,13 @@ export default function Page() {
               </p>
             </section>
             <section>
-              <h3>Card user → purchase order</h3>
+              <h3>Card user / PO technician</h3>
               <p>
-                <strong>{ownershipLabel(state, active)}</strong>
+                Card user: <strong>{ownershipLabel(state, active)}</strong>
+              </p>
+              <p>
+                PO technician:{" "}
+                <strong>{poTechnicianLabel(state, active)}</strong>
               </p>
               <p>{active.pos.join(", ") || "No linked purchase order"}</p>
               <small>
@@ -1027,6 +1028,18 @@ export default function Page() {
                     <small>
                       {r.date} · {r.account}
                     </small>
+                    {r.source === "st" && (
+                      <p>
+                        PO technician:{" "}
+                        <strong>{poTechnician(state, r).name}</strong>
+                        <small>
+                          {poTechnician(state, r).basis}
+                          {r.technicianId
+                            ? ` · ST technician #${r.technicianId}`
+                            : ""}
+                        </small>
+                      </p>
+                    )}
                     {r.source === "st" && r.poStatus && (
                       <small>ServiceTitan PO status: {r.poStatus}</small>
                     )}
