@@ -6,6 +6,7 @@ import {
   type State,
   type RecordItem,
   type Directory,
+  type Rule,
 } from "./domain";
 import {
   fingerprint,
@@ -13,23 +14,32 @@ import {
   normalize,
   ENGINE_VERSION,
   decisionFitsPolicy,
+  sameRuleMatch,
 } from "./engine";
 import { appendAudit } from "./store";
 import { suggestRules } from "./suggestions";
 import { applyOwnership } from "./ownership";
 import { saveCardMappings } from "./save-card-mappings";
 import { ServiceTitanSetupError } from "./servicetitan-settings";
+import { exclusionDraft, ruleMatchField } from "./vendor-rule";
 const ruleSchema = z
   .object({
     type: z.enum(["alias", "no-po"]),
-    pattern: z.string().trim().min(1).max(150),
+    pattern: z.string().trim().min(1).max(500),
+    matchField: z.enum(["vendor", "description"]).optional(),
     target: z.string().trim().max(150),
     maxCents: z.number().int().min(0).max(10000000).nullable(),
     description: z.string().trim().min(5).max(500),
   })
   .refine(
-    (r) => r.type !== "alias" || r.target.length > 0,
-    "Canonical vendor is required",
+    (r) =>
+      r.type !== "alias" ||
+      (r.target.length > 0 && ruleMatchField(r) === "vendor"),
+    "Vendor aliases require a canonical vendor and must match vendor names",
+  )
+  .refine(
+    (r) => r.matchField === "description" || normalize(r.pattern).length > 0,
+    "Enter a usable vendor name",
   );
 export const actionSchema = z
   .discriminatedUnion("type", [
@@ -82,6 +92,19 @@ export const actionSchema = z
       action: z.enum(["confirm", "dismiss"]),
       reason: z.string().trim().max(2000).default(""),
       poIds: z.array(z.string().trim().min(1)).max(20).optional(),
+    }),
+    z.object({
+      type: z.literal("save-rule"),
+      revision: z.number().int(),
+      approve: z.literal(true),
+      rule: ruleSchema,
+    }),
+    z.object({
+      type: z.literal("save-vendor-exclusion"),
+      revision: z.number().int(),
+      approve: z.literal(true),
+      recordId: z.string().min(1),
+      maxCents: z.number().int().min(0).max(10000000).nullable(),
     }),
     z.object({
       type: z.literal("suggest-rule"),
@@ -278,11 +301,38 @@ export function applyAction(
       results,
     });
   }
+  if (action.type === "save-rule" || action.type === "save-vendor-exclusion") {
+    let input: z.infer<typeof ruleSchema>;
+    let sourceRecord: RecordItem | undefined;
+    if (action.type === "save-vendor-exclusion") {
+      sourceRecord = state.records.find((r) => r.id === action.recordId);
+      if (!sourceRecord)
+        throw Error("Source record no longer exists. Refresh and retry.");
+      const draft = exclusionDraft(sourceRecord);
+      if (!draft)
+        throw Error(
+          "This record has no usable vendor or full description for a rule.",
+        );
+      input = ruleSchema.parse({ ...draft, maxCents: action.maxCents });
+    } else input = action.rule;
+    const matches = state.rules.filter((r) =>
+      sameRuleMatch(r, input, state.rules),
+    );
+    if (matches.length > 1)
+      throw Error(
+        "Multiple rules already match this vendor or description. Resolve them before saving.",
+      );
+    const before = matches[0];
+    const rule: Rule = {
+      ...input,
+      id: before?.id || randomUUID(),
+      approved: true,
+    };
+    applyApprovedRule(state, rule, before, actor, asOf, sourceRecord);
+  }
   if (action.type === "suggest-rule") {
-    const sameVendor = state.rules.filter(
-      (r) =>
-        r.type === action.rule.type &&
-        normalize(r.pattern) === normalize(action.rule.pattern),
+    const sameVendor = state.rules.filter((r) =>
+      sameRuleMatch(r, action.rule, state.rules),
     );
     if (sameVendor.some((r) => r.approved))
       throw Error(
@@ -313,18 +363,12 @@ export function applyAction(
     const rule = state.rules.find((r) => r.id === action.id);
     if (!rule || rule.approved) throw Error("Pending rule not found");
     if (
-      state.rules.some(
-        (r) =>
-          r.approved &&
-          r.type === rule.type &&
-          normalize(r.pattern) === normalize(rule.pattern),
-      )
+      state.rules.some((r) => r.approved && sameRuleMatch(r, rule, state.rules))
     )
       throw Error(
         "An approved rule already uses this vendor; retire it before replacement",
       );
-    rule.approved = true;
-    appendAudit(state, actor, "Rule explicitly approved", rule);
+    applyApprovedRule(state, { ...rule, approved: true }, rule, actor, asOf);
   }
   if (action.type === "decision") {
     const results = reconcile(
@@ -437,4 +481,61 @@ export function applyAction(
       ),
     });
   }
+}
+
+function applyApprovedRule(
+  state: State,
+  rule: Rule,
+  before: Rule | undefined,
+  actor: string,
+  asOf: string,
+  sourceRecord?: RecordItem,
+) {
+  const evaluate = (rules: Rule[]) =>
+    reconcile(
+      state.records,
+      state.config,
+      rules,
+      asOf,
+      state.decisions,
+      state.coverage,
+    );
+  const priorResults = evaluate(state.rules);
+  const rules = before
+    ? state.rules.map((r) => (r.id === before.id ? rule : r))
+    : [...state.rules, rule];
+  const results = evaluate(rules);
+  const counts = (rows: typeof results) =>
+    rows.reduce<Record<string, number>>((all, r) => {
+      all[r.status] = (all[r.status] || 0) + 1;
+      return all;
+    }, {});
+  state.rules = rules;
+  appendAudit(state, actor, "Rule explicitly approved", {
+    ...rule,
+    before: before || null,
+    after: rule,
+    ...(sourceRecord
+      ? {
+          sourceRecordId: sourceRecord.id,
+          sourceRecordFingerprint: fingerprint(state.records, [
+            sourceRecord.id,
+          ]),
+        }
+      : {}),
+    reconciliation: {
+      engine: ENGINE_VERSION,
+      asOf,
+      policy: state.config,
+      coverage: state.coverage,
+      sourceFingerprint: fingerprint(
+        state.records,
+        state.records.map((r) => r.id),
+      ),
+      ruleIds: rules.filter((r) => r.approved).map((r) => r.id),
+      statusCountsBefore: counts(priorResults),
+      statusCountsAfter: counts(results),
+      results,
+    },
+  });
 }

@@ -10,7 +10,8 @@ import {
   type State,
 } from "./domain";
 import { vendorDisplay } from "./vendor-evidence";
-export const ENGINE_VERSION = "1.2.0";
+import { descriptionKey, ruleMatchField } from "./vendor-rule";
+export const ENGINE_VERSION = "1.3.0";
 export function decisionFitsPolicy(
   decision: Pick<Decision, "charges" | "pos">,
   policy: Config,
@@ -32,6 +33,35 @@ export function normalize(v: string, rules: Rule[] = []): string {
     (r) => r.approved && r.type === "alias" && clean(r.pattern) === key,
   );
   return clean(alias ? alias.target : v);
+}
+export function sameRuleMatch(
+  a: Pick<Rule, "type" | "pattern" | "matchField">,
+  b: Pick<Rule, "type" | "pattern" | "matchField">,
+  rules: Rule[] = [],
+) {
+  if (a.type !== b.type || ruleMatchField(a) !== ruleMatchField(b))
+    return false;
+  return ruleMatchField(a) === "description"
+    ? descriptionKey(a.pattern) === descriptionKey(b.pattern)
+    : normalize(a.pattern, a.type === "no-po" ? rules : []) ===
+        normalize(b.pattern, b.type === "no-po" ? rules : []);
+}
+export function noPORuleApplies(record: RecordItem, rule: Rule, rules: Rule[]) {
+  if (
+    record.source !== "qbo" ||
+    !rule.approved ||
+    rule.type !== "no-po" ||
+    record.amount <= 0 ||
+    (rule.maxCents !== null && record.amount > rule.maxCents)
+  )
+    return false;
+  return ruleMatchField(rule) === "description"
+    ? !!record.vendorMissing &&
+        !!descriptionKey(record.description) &&
+        descriptionKey(rule.pattern) === descriptionKey(record.description)
+    : !record.vendorMissing &&
+        !!normalize(rule.pattern, rules) &&
+        normalize(rule.pattern, rules) === normalize(record.vendor, rules);
 }
 const days = (a: string, b: string) =>
   Math.round((Date.parse(a) - Date.parse(b)) / 86400000);
@@ -201,58 +231,41 @@ export function reconcile(
     );
     ids.forEach((id) => consumed.add(id));
   }
-  // Missing vendor identity is a review exception, never evidence for a match or exemption.
-  for (const r of records.filter(
-    (r) => r.vendorMissing && !consumed.has(r.id),
-  )) {
-    output.push(
-      result(
-        r.source === "qbo" ? [r] : [],
-        r.source === "st" ? [r] : [],
-        r.description.trim() ? "Payee not assigned" : "Missing vendor",
-        0,
-        [
-          r.description.trim()
-            ? "QuickBooks has no assigned payee. The source description is shown, but has not been verified as a vendor. Automatic matching and No-PO exemptions are disabled."
-            : "QuickBooks has no assigned payee or usable merchant description. Automatic matching and No-PO exemptions are disabled.",
-          "Add the vendor in the source system and sync again, or record an explicit manual review.",
-        ],
-        r.amount < 0 ? ["Unallocated refund / credit"] : [],
-      ),
-    );
-    consumed.add(r.id);
-  }
   const duplicate = new Set<string>();
-  for (const q of charges.filter((r) => !r.vendorMissing)) {
+  const identity = (r: RecordItem) =>
+    r.vendorMissing
+      ? descriptionKey(r.description)
+        ? "description:" + descriptionKey(r.description)
+        : ""
+      : "vendor:" + normalize(r.vendor, rules);
+  for (const q of charges) {
+    const key = identity(q);
     if (
+      key &&
       charges.some(
         (o) =>
           o.id !== q.id &&
-          !o.vendorMissing &&
+          identity(o) === key &&
           o.amount === q.amount &&
           o.date === q.date &&
-          normalize(o.vendor, rules) === normalize(q.vendor, rules) &&
           (o.accountId || o.account) === (q.accountId || q.account),
       )
     )
       duplicate.add(q.id);
   }
-  // No-PO exemptions never mask possible duplicates and never apply to refunds.
+  // Explicit description exemptions are distinct from vendor identification.
+  // They never change imported payees or provide evidence for an automatic PO link.
   for (const q of charges.filter(
     (r) => !consumed.has(r.id) && !duplicate.has(r.id),
   )) {
-    const rule = rules.find(
-      (r) =>
-        r.approved &&
-        r.type === "no-po" &&
-        normalize(r.pattern, rules) === normalize(q.vendor, rules) &&
-        q.amount > 0 &&
-        (r.maxCents === null || q.amount <= r.maxCents),
-    );
+    const rule = rules.find((r) => noPORuleApplies(q, r, rules));
     if (rule) {
       output.push(
         result([q], [], "No PO required", 0, [
           `Approved rule ${rule.id}: ${rule.description}`,
+          ruleMatchField(rule) === "description"
+            ? `Explicitly approved full QuickBooks description: "${rule.pattern}". Payee remains unassigned; no vendor identity was inferred.`
+            : `Approved vendor exemption: ${rule.pattern}.`,
           rule.maxCents === null
             ? "Approved merchant exemption has no amount limit."
             : `Amount within ${rule.maxCents} cent limit.`,
@@ -260,6 +273,35 @@ export function reconcile(
       );
       consumed.add(q.id);
     }
+  }
+  for (const r of records.filter(
+    (r) => r.vendorMissing && !consumed.has(r.id),
+  )) {
+    output.push(
+      result(
+        r.source === "qbo" ? [r] : [],
+        r.source === "st" ? [r] : [],
+        duplicate.has(r.id)
+          ? "Possible duplicate"
+          : r.description.trim()
+            ? "Payee not assigned"
+            : "Missing vendor",
+        0,
+        [
+          r.description.trim()
+            ? "QuickBooks has no assigned payee. Automatic PO matching is disabled. An explicit full-description No-PO rule can exempt eligible purchases."
+            : "The source has no usable vendor identity. Automatic matching and vendor exemptions are disabled.",
+          ...(duplicate.has(r.id)
+            ? [
+                "Another charge has the same description, account, date and amount. No-PO rules do not hide possible duplicates.",
+              ]
+            : []),
+          "Review the source evidence or create a rule from the detail panel.",
+        ],
+        r.amount < 0 ? ["Unallocated refund / credit"] : [],
+      ),
+    );
+    consumed.add(r.id);
   }
   type Candidate = {
     q: RecordItem[];

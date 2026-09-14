@@ -117,7 +117,8 @@ test("rule suggestions stay inactive until approval, snapshots in audit do not m
   const rule = state.rules.at(-1)!;
   assert.equal(rule.approved, false);
   applyAction(state, { type: "approve-rule", revision: 1, id: rule.id }, "qa");
-  assert.equal(rule.approved, true);
+  assert.equal(state.rules.find((r) => r.id === rule.id)!.approved, true);
+  assert.equal(rule.approved, false); // Previous rule snapshot remains unchanged.
   assert.equal((state.audit[0].detail as any).approved, false);
   assert.ok(verifyAudit(state.audit));
 });

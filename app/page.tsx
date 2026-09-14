@@ -40,6 +40,7 @@ import {
   reconciliationIndividuals,
 } from "@/lib/po-technician";
 import CardMappings from "./card-mappings";
+import VendorExclusionRule from "./vendor-exclusion-rule";
 import TechnicianScorecard from "./scorecard";
 import LegalLinks from "./legal-links";
 import IntegrationStatus from "./integration-status";
@@ -140,7 +141,15 @@ export default function Page() {
       const data = await r.json();
       if (!r.ok) throw Error(data.error || "Request failed");
       setState(data);
-      setMessage("Saved successfully");
+      setMessage(
+        ["save-vendor-exclusion", "save-rule", "approve-rule"].includes(
+          (body as { type?: string }).type || "",
+        )
+          ? "Rule saved and applied. Reconciliation refreshed."
+          : (body as { type?: string }).type === "suggest-rule"
+            ? "Rule proposed. Approve it to apply it to reconciliation."
+            : "Saved successfully",
+      );
       setReason("");
       return true;
     } catch (e) {
@@ -763,6 +772,12 @@ export default function Page() {
                       · {r.pattern}
                     </h3>
                     <p>{r.description}</p>
+                    {r.matchField === "description" && (
+                      <small>
+                        Matches the full QuickBooks description only when no
+                        payee is assigned.
+                      </small>
+                    )}
                     {r.type === "no-po" && (
                       <small>
                         {r.maxCents === null
@@ -782,16 +797,18 @@ export default function Page() {
                     )}
                   </div>
                 ))}
-                <h3>Propose a rule</h3>
+                <h3>Add a rule</h3>
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
                     const f = new FormData(e.currentTarget);
                     mutate({
-                      type: "suggest-rule",
+                      type: "save-rule",
+                      approve: true,
                       rule: {
                         type: f.get("type"),
                         pattern: f.get("pattern"),
+                        matchField: f.get("matchField"),
                         target: f.get("target"),
                         maxCents:
                           f.get("type") === "no-po" && f.get("noLimit") === "on"
@@ -810,8 +827,17 @@ export default function Page() {
                     </select>
                   </label>
                   <label className="field">
-                    Exact vendor
-                    <input name="pattern" required />
+                    Match source
+                    <select name="matchField">
+                      <option value="vendor">Vendor name</option>
+                      <option value="description">
+                        QuickBooks description (unassigned payee)
+                      </option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    Exact vendor or description
+                    <input name="pattern" required maxLength={500} />
                   </label>
                   <label className="field">
                     Canonical vendor (alias)
@@ -839,7 +865,14 @@ export default function Page() {
                     Merchant exemptions include all purchases at that vendor.
                     Possible duplicates and refunds remain in review.
                   </p>
-                  <button disabled={busy}>Submit for approval</button>
+                  <p className="hint">
+                    Saving explicitly approves this rule and immediately
+                    refreshes reconciliation. Automatic suggestions above still
+                    require approval.
+                  </p>
+                  <button className="primary" disabled={busy}>
+                    Save and apply rule
+                  </button>
                 </form>
               </section>
             </div>
@@ -1091,6 +1124,26 @@ export default function Page() {
                 );
               })}
             </section>
+            <VendorExclusionRule
+              key={active.id}
+              state={state}
+              record={state.records.find(
+                (r) => r.id === (active.charges[0] || active.pos[0]),
+              )!}
+              busy={busy}
+              error={
+                message === "Saved successfully" ||
+                message === "Rule saved and applied. Reconciliation refreshed."
+                  ? ""
+                  : message
+              }
+              onSave={mutate}
+              onApplied={() =>
+                setSelected((current) =>
+                  current === active.id ? null : current,
+                )
+              }
+            />
             <section>
               <h3>Manual review</h3>
               <label className="field">

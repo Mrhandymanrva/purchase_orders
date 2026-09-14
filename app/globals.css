@@ -1483,3 +1483,25 @@ footer,
 .sort-button:focus-visible {
   outline-offset: -3px;
 }
+.vendor-rule summary {
+  cursor: pointer;
+  color: #204f40;
+  font-weight: 600;
+}
+.vendor-rule .rule-pattern {
+  background: #f4f7f2;
+  border: 1px solid #dce4d9;
+  border-radius: 7px;
+  padding: 12px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.vendor-rule .rule-limit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0;
+}
+.vendor-rule .rule-limit input {
+  width: auto;
+}

@@ -17,7 +17,10 @@ export function suggestRules(
     if (
       new Set(records.map((r) => r.date)).size < 3 ||
       state.rules.some(
-        (r) => r.type === "no-po" && normalize(r.pattern, state.rules) === key,
+        (r) =>
+          r.type === "no-po" &&
+          r.matchField !== "description" &&
+          normalize(r.pattern, state.rules) === key,
       )
     )
       return [];

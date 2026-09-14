@@ -99,6 +99,7 @@ export type Rule = {
   id: string;
   type: "alias" | "no-po";
   pattern: string;
+  matchField?: "vendor" | "description";
   target: string;
   maxCents: number | null;
   approved: boolean;
