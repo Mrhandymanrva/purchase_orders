@@ -11,7 +11,7 @@ import {
 } from "./domain";
 import { vendorDisplay } from "./vendor-evidence";
 import { descriptionKey, ruleMatchField } from "./vendor-rule";
-export const ENGINE_VERSION = "1.3.0";
+export const ENGINE_VERSION = "1.4.0";
 export function decisionFitsPolicy(
   decision: Pick<Decision, "charges" | "pos">,
   policy: Config,
@@ -223,6 +223,24 @@ export function reconcile(
     const q = charges.filter((r) => d.charges.includes(r.id)),
       p = pos.filter((r) => d.pos.includes(r.id));
     if (!q.length && !p.length) continue;
+    if (d.action === "categorize") {
+      if (q.length !== 1 || p.length || !d.categoryId || !d.categoryName)
+        continue;
+      output.push({
+        ...result(q, [], "No PO required", 0, [
+          "Spend category approved by " +
+            d.actor +
+            ": " +
+            d.categoryName +
+            ". No PO required for this individual purchase.",
+          "Recorded " + d.at + "; source fingerprint verified.",
+        ]),
+        categoryId: d.categoryId,
+        categoryName: d.categoryName,
+      });
+      consumed.add(q[0].id);
+      continue;
+    }
     output.push(
       result(q, p, d.action === "confirm" ? "Confirmed" : "Dismissed", 0, [
         `Manual ${d.action} by ${d.actor}: ${d.reason}`,

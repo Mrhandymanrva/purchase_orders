@@ -1505,3 +1505,33 @@ footer,
 .vendor-rule .rule-limit input {
   width: auto;
 }
+.category-settings {
+  grid-column: 1 / -1;
+}
+.category-list {
+  display: grid;
+  gap: 12px;
+  margin: 20px 0;
+}
+.category-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.category-edit-row .field {
+  flex: 1;
+  min-width: 220px;
+  margin: 0;
+}
+.category-available {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.category-buttons {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}

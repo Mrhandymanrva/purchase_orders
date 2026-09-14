@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { spendCategoryLabel } from "./spend-categories";
 import type { State, Result, RecordItem } from "./domain";
 import { vendorBasis } from "./vendor-evidence";
 import { isReconciled, needsReview } from "./reconciliation-status";
@@ -29,6 +30,7 @@ export const reportColumns = [
   { key: "date", label: "Date" },
   { key: "amount", label: "Amount" },
   { key: "status", label: "Status" },
+  { key: "category", label: "Spend category" },
   { key: "score", label: "Confidence" },
   { key: "po", label: "Purchase order" },
 ] as const;
@@ -41,6 +43,7 @@ export const reportSortSchema = z.object({
       "date",
       "amount",
       "status",
+      "category",
       "score",
       "po",
     ])
@@ -127,6 +130,8 @@ function sortResults(results: Result[], state: State, filter: ReportFilter) {
         return reportAmount(state, r, filter);
       case "status":
         return r.status;
+      case "category":
+        return spendCategoryLabel(state, r) || null;
       case "score":
         return r.score > 0 ? r.score : null;
       case "po":
@@ -176,7 +181,7 @@ export function filterResults(
             ? isReconciled(r.status)
             : r.status === f.status)) &&
       (!f.query ||
-        `${r.vendor} ${r.id} ${r.pos.join(" ")} ${r.charges.join(" ")} ${ownershipLabel(state, r)} ${poTechnicianLabel(state, r)}`
+        `${r.vendor} ${r.id} ${r.pos.join(" ")} ${r.charges.join(" ")} ${ownershipLabel(state, r)} ${poTechnicianLabel(state, r)} ${spendCategoryLabel(state, r)}`
           .toLowerCase()
           .includes(f.query.toLowerCase()))
     );
@@ -222,6 +227,7 @@ export function reportCSV(
       "Engine version",
       "PO technician",
       "ST technician ID",
+      "Spend category",
     ],
   ];
   for (const r of selected) {
@@ -258,6 +264,7 @@ export function reportCSV(
             (id) => state.records.find((p) => p.id === id)?.technicianId || "",
           )
           .join("; "),
+        spendCategoryLabel(state, r),
       ]);
     }
     if (!r.charges.length)
@@ -286,6 +293,7 @@ export function reportCSV(
             (id) => state.records.find((p) => p.id === id)?.technicianId || "",
           )
           .join("; "),
+        spendCategoryLabel(state, r),
       ]);
   }
   return "\uFEFF" + rows.map((row) => row.map(cell).join(",")).join("\r\n");

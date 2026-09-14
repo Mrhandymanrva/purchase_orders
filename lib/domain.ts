@@ -118,11 +118,16 @@ export type Result = {
   reasons: string[];
   flags: string[];
   kind: string;
+  categoryId?: string;
+  categoryName?: string;
 };
+export type SpendCategory = { id: string; name: string; active: boolean };
 export type Decision = {
   resultId: string;
   fingerprint: string;
-  action: "confirm" | "dismiss";
+  action: "confirm" | "dismiss" | "categorize";
+  categoryId?: string;
+  categoryName?: string;
   reason: string;
   actor: string;
   at: string;
@@ -144,6 +149,7 @@ export type State = {
   config: Config;
   rules: Rule[];
   decisions: Decision[];
+  spendCategories?: SpendCategory[];
   audit: Audit[];
   lastSync: string | null;
   mode: "demo" | "live";

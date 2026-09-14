@@ -41,6 +41,9 @@ import {
 } from "@/lib/po-technician";
 import CardMappings from "./card-mappings";
 import VendorExclusionRule from "./vendor-exclusion-rule";
+import SpendCategoryPicker from "./spend-category-picker";
+import SpendCategorySettings from "./spend-category-settings";
+import { spendCategoryLabel } from "@/lib/spend-categories";
 import TechnicianScorecard from "./scorecard";
 import LegalLinks from "./legal-links";
 import IntegrationStatus from "./integration-status";
@@ -146,9 +149,13 @@ export default function Page() {
           (body as { type?: string }).type || "",
         )
           ? "Rule saved and applied. Reconciliation refreshed."
-          : (body as { type?: string }).type === "suggest-rule"
-            ? "Rule proposed. Approve it to apply it to reconciliation."
-            : "Saved successfully",
+          : (body as { type?: string }).type === "categorize-spend"
+            ? "Spend category saved. Reconciliation refreshed."
+            : (body as { type?: string }).type === "save-spend-categories"
+              ? "Spend categories saved."
+              : (body as { type?: string }).type === "suggest-rule"
+                ? "Rule proposed. Approve it to apply it to reconciliation."
+                : "Saved successfully",
       );
       setReason("");
       return true;
@@ -583,6 +590,7 @@ export default function Page() {
                               </small>
                             )}
                           </td>
+                          <td>{spendCategoryLabel(state, r) || "—"}</td>
                           <td>
                             {r.score > 0 ? (
                               <div className="confidence">
@@ -632,6 +640,12 @@ export default function Page() {
           ) : null}
           {tab === "Rules & scoring" && (
             <div className="settings-grid">
+              <SpendCategorySettings
+                key={state.revision}
+                state={state}
+                busy={busy}
+                onSave={mutate}
+              />
               <section className="panel">
                 <h2>Matching policy</h2>
                 <p>
@@ -1041,9 +1055,11 @@ export default function Page() {
               </p>
               <p>{active.pos.join(", ") || "No linked purchase order"}</p>
               <small>
-                {isReconciled(active.status)
-                  ? "Reconciled link"
-                  : "Proposed link; review required before confirmation."}
+                {active.status === "No PO required"
+                  ? "Approved No-PO exception; no further confirmation required."
+                  : isReconciled(active.status)
+                    ? "Reconciled link"
+                    : "Proposed link; review required before confirmation."}
               </small>
             </section>
             <section>
@@ -1124,8 +1140,22 @@ export default function Page() {
                 );
               })}
             </section>
+            {active.charges.length === 1 && (
+              <SpendCategoryPicker
+                key={"category:" + active.id}
+                state={state}
+                result={active}
+                busy={busy}
+                onSave={mutate}
+                onApplied={() =>
+                  setSelected((current) =>
+                    current === active.id ? null : current,
+                  )
+                }
+              />
+            )}
             <VendorExclusionRule
-              key={active.id}
+              key={"vendor:" + active.id}
               state={state}
               record={state.records.find(
                 (r) => r.id === (active.charges[0] || active.pos[0]),

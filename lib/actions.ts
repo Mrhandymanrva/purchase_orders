@@ -22,6 +22,11 @@ import { applyOwnership } from "./ownership";
 import { saveCardMappings } from "./save-card-mappings";
 import { ServiceTitanSetupError } from "./servicetitan-settings";
 import { exclusionDraft, ruleMatchField } from "./vendor-rule";
+import {
+  saveSpendCategories,
+  categorizeSpend,
+  spendCategorySchema,
+} from "./spend-category-actions";
 const ruleSchema = z
   .object({
     type: z.enum(["alias", "no-po"]),
@@ -92,6 +97,17 @@ export const actionSchema = z
       action: z.enum(["confirm", "dismiss"]),
       reason: z.string().trim().max(2000).default(""),
       poIds: z.array(z.string().trim().min(1)).max(20).optional(),
+    }),
+    z.object({
+      type: z.literal("save-spend-categories"),
+      revision: z.number().int(),
+      categories: z.array(spendCategorySchema).min(1).max(100),
+    }),
+    z.object({
+      type: z.literal("categorize-spend"),
+      revision: z.number().int(),
+      chargeId: z.string().min(1).max(100),
+      categoryId: z.string().min(1).max(100).nullable(),
     }),
     z.object({
       type: z.literal("save-rule"),
@@ -301,6 +317,10 @@ export function applyAction(
       results,
     });
   }
+  if (action.type === "save-spend-categories")
+    saveSpendCategories(state, action.categories, actor);
+  if (action.type === "categorize-spend")
+    categorizeSpend(state, action.chargeId, action.categoryId, actor, asOf);
   if (action.type === "save-rule" || action.type === "save-vendor-exclusion") {
     let input: z.infer<typeof ruleSchema>;
     let sourceRecord: RecordItem | undefined;

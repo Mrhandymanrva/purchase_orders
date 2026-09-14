@@ -10,6 +10,7 @@ import {
 import { scorecard, periodRange, type Period } from "./scorecard";
 import { vendorDisplay } from "./vendor-evidence";
 import { poTechnician } from "./po-technician";
+import { spendCategoryLabel } from "./spend-categories";
 
 export type PDFColumn = {
   label: string;
@@ -111,7 +112,7 @@ export function reconciliationPDFModel(
           { label: "CARD USER", width: 106 },
           { label: "CARD USD", width: 78, align: "right", bold: true },
           { label: "PO USD", width: 78, align: "right" },
-          { label: "STATUS", width: 111 },
+          { label: "STATUS / CATEGORY", width: 111 },
           { label: "PURCHASE ORDER", width: 114 },
         ],
         rows: groups.map(({ result: r, charges: q, pos: p }) => [
@@ -129,6 +130,9 @@ export function reconciliationPDFModel(
           p.length ? money(sum(p)) : "-",
           [
             r.status,
+            ...(r.categoryId
+              ? ["Category: " + spendCategoryLabel(state, r)]
+              : []),
             ...(r.score ? [`${r.score}% confidence`] : []),
             ...(r.pos.length && r.charges.length
               ? [isReconciled(r.status) ? "Reconciled link" : "Proposed link"]
