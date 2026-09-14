@@ -535,6 +535,7 @@ export default function Page() {
                               className="vendor-button"
                               onClick={() => {
                                 setSelected(r.id);
+                                setMessage("");
                                 setReason("");
                                 setAction("confirm");
                                 setManual("");
@@ -595,6 +596,7 @@ export default function Page() {
                               aria-label={"Review " + r.vendor}
                               onClick={() => {
                                 setSelected(r.id);
+                                setMessage("");
                                 setReason("");
                                 setAction("confirm");
                                 setManual("");
@@ -1100,8 +1102,8 @@ export default function Page() {
                 disabled={
                   busy || (action === "dismiss" && reason.trim().length < 5)
                 }
-                onClick={() =>
-                  mutate({
+                onClick={async () => {
+                  const saved = await mutate({
                     type: "decision",
                     resultId: active.id,
                     action,
@@ -1109,13 +1111,23 @@ export default function Page() {
                     poIds: manual.trim()
                       ? manual.split(",").map((s) => s.trim())
                       : undefined,
-                  })
-                }
+                  });
+                  if (saved && action === "confirm") {
+                    setSelected((current) =>
+                      current === active.id ? null : current,
+                    );
+                  }
+                }}
               >
                 {action === "confirm"
                   ? "Confirm reconciliation"
                   : "Save review decision"}
               </button>
+              {message && message !== "Saved successfully" && (
+                <p className="notice" role="alert">
+                  {message}
+                </p>
+              )}
               <p className="muted">
                 This updates the reconciliation record only.
               </p>

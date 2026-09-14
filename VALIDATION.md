@@ -66,3 +66,8 @@ Not performed: closed-period reconciliation against actual statements, backup/re
 - All 153 tests passed, including four sorting/report tests covering all seven headers in both directions, signed amounts, year boundaries, natural PO-number ordering, missing scores/POs last, deterministic ties, input immutability, person/date filters, grouped amounts, CSV/PDF order and invalid API sort parameters. TypeScript validation and the production Next.js build passed.
 - Browser validation confirmed Amount descending starts with the $1,264.80 sample purchase; a second click switches to ascending with the -$89.00 refund first. The selected header is highlighted, its arrow reverses, and accessible header buttons describe the next sort direction. Export links carry the chosen sort key and direction.
 - Sorting only changes display/export group order. It does not modify matching policy, manual decisions or source data. Group amounts in the register use the same person/date scope as report sorting; CSV retains individual source rows within each sorted group.
+
+## Close detail after confirmation - September 14, 2026
+
+- Successful Confirm reconciliation saves now close the originating detail panel. A delayed response cannot close a different record opened meanwhile. Failed saves leave the panel open and display an inline error; opening another record clears old notifications.
+- Browser validation on sample data: an invalid override PO returned the validation error with the panel still open; correcting the override and confirming closed the panel, restored the usable table and displayed Confirmed. Production compilation and TypeScript validation passed.
