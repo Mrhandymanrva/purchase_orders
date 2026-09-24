@@ -1,3 +1,4 @@
+import { jobContext, purchaseOrderLabel } from "./job-context";
 import { z } from "zod";
 import { spendCategoryLabel } from "./spend-categories";
 import type { State, Result, RecordItem } from "./domain";
@@ -31,6 +32,8 @@ export const reportColumns = [
   { key: "vendor", label: "Vendor / transaction" },
   { key: "cardUser", label: "Card user" },
   { key: "poTechnician", label: "PO technician" },
+  { key: "customer", label: "Customer" },
+  { key: "jobId", label: "Job number / ID" },
   { key: "date", label: "Date" },
   { key: "amount", label: "Amount" },
   { key: "status", label: "Status" },
@@ -44,6 +47,8 @@ export const reportSortSchema = z.object({
       "vendor",
       "cardUser",
       "poTechnician",
+      "customer",
+      "jobId",
       "date",
       "amount",
       "status",
@@ -128,6 +133,14 @@ function sortResults(results: Result[], state: State, filter: ReportFilter) {
         return ownershipLabel(state, r);
       case "poTechnician":
         return r.pos.length ? poTechnicianLabel(state, r) : null;
+      case "customer":
+        return jobContext(state, r, "customerName") || null;
+      case "jobId":
+        return (
+          jobContext(state, r, "jobNumber") ||
+          jobContext(state, r, "jobId") ||
+          null
+        );
       case "date":
         return r.date;
       case "amount":
@@ -139,7 +152,7 @@ function sortResults(results: Result[], state: State, filter: ReportFilter) {
       case "score":
         return r.score > 0 ? r.score : null;
       case "po":
-        return r.pos.length ? r.pos.join(", ") : null;
+        return r.pos.length ? purchaseOrderLabel(state, r) : null;
     }
   };
   return results
@@ -185,7 +198,7 @@ export function filterResults(
             ? isReconciled(r.status)
             : r.status === f.status)) &&
       (!f.query ||
-        `${r.vendor} ${r.id} ${r.pos.join(" ")} ${r.charges.join(" ")} ${ownershipLabel(state, r)} ${poTechnicianLabel(state, r)} ${spendCategoryLabel(state, r)}`
+        `${r.vendor} ${r.id} ${r.pos.join(" ")} ${r.charges.join(" ")} ${ownershipLabel(state, r)} ${poTechnicianLabel(state, r)} ${spendCategoryLabel(state, r)} ${jobContext(state, r, "customerName")} ${jobContext(state, r, "jobId")} ${jobContext(state, r, "jobNumber")} ${purchaseOrderLabel(state, r)}`
           .toLowerCase()
           .includes(f.query.toLowerCase()))
     );
@@ -232,6 +245,10 @@ export function reportCSV(
       "PO technician",
       "ST technician ID",
       "Spend category",
+      "Customer name",
+      "Job ID",
+      "Job number",
+      "Linked PO numbers",
     ],
   ];
   for (const r of selected) {
@@ -269,6 +286,10 @@ export function reportCSV(
           )
           .join("; "),
         spendCategoryLabel(state, r),
+        jobContext(state, r, "customerName"),
+        jobContext(state, r, "jobId"),
+        jobContext(state, r, "jobNumber"),
+        purchaseOrderLabel(state, r),
       ]);
     }
     if (!r.charges.length)
@@ -298,6 +319,10 @@ export function reportCSV(
           )
           .join("; "),
         spendCategoryLabel(state, r),
+        jobContext(state, r, "customerName"),
+        jobContext(state, r, "jobId"),
+        jobContext(state, r, "jobNumber"),
+        purchaseOrderLabel(state, r),
       ]);
   }
   return "\uFEFF" + rows.map((row) => row.map(cell).join(",")).join("\r\n");

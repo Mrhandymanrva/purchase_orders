@@ -42,6 +42,7 @@ import {
   reconciliationIndividuals,
 } from "@/lib/po-technician";
 import { previousWeekRange } from "@/lib/date-range";
+import { jobContext, purchaseOrderLabel } from "@/lib/job-context";
 import ManualMatch from "./manual-match";
 import CardMappings from "./card-mappings";
 import VendorExclusionRule from "./vendor-exclusion-rule";
@@ -436,7 +437,7 @@ export default function Page() {
                     <Search size={16} />
                     <input
                       aria-label="Search reconciliation"
-                      placeholder="Search vendor, person or reference…"
+                      placeholder="Search vendor, customer, job or person…"
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
                     />
@@ -609,6 +610,17 @@ export default function Page() {
                           <td className="card-user">
                             {poTechnicianLabel(state, r)}
                           </td>
+                          <td className="card-user">
+                            {jobContext(state, r, "customerName") || "—"}
+                          </td>
+                          <td className="po">
+                            {jobContext(state, r, "jobNumber") ||
+                              jobContext(state, r, "jobId") ||
+                              "—"}
+                            {jobContext(state, r, "jobNumber") && (
+                              <small>ID: {jobContext(state, r, "jobId")}</small>
+                            )}
+                          </td>
                           <td>
                             {new Date(r.date + "T12:00:00").toLocaleDateString(
                               "en-US",
@@ -642,7 +654,16 @@ export default function Page() {
                               <span className="muted">—</span>
                             )}
                           </td>
-                          <td className="po">{r.pos.join(", ") || "—"}</td>
+                          <td
+                            className="po"
+                            title={
+                              r.pos.length
+                                ? "Internal record ID: " + r.pos.join(", ")
+                                : undefined
+                            }
+                          >
+                            {purchaseOrderLabel(state, r) || "—"}
+                          </td>
                           <td>
                             <button
                               className="icon-button"
@@ -1092,7 +1113,16 @@ export default function Page() {
                 PO technician:{" "}
                 <strong>{poTechnicianLabel(state, active)}</strong>
               </p>
-              <p>{active.pos.join(", ") || "No linked purchase order"}</p>
+              <p>
+                PO number:{" "}
+                {purchaseOrderLabel(state, active) ||
+                  "No linked purchase order"}
+              </p>
+              {active.pos.length > 0 && (
+                <p className="muted">
+                  Internal record ID: {active.pos.join(", ")}
+                </p>
+              )}
               <small>
                 {active.status === "No PO required"
                   ? "Approved No-PO exception; no further confirmation required."
@@ -1103,6 +1133,20 @@ export default function Page() {
             </section>
             <section>
               <h3>Source records</h3>
+              <p>
+                Job number:{" "}
+                <strong>{jobContext(state, active, "jobNumber") || "—"}</strong>
+              </p>
+              <p>
+                Customer:{" "}
+                <strong>
+                  {jobContext(state, active, "customerName") || "—"}
+                </strong>
+              </p>
+              <p>
+                Job ID:{" "}
+                <strong>{jobContext(state, active, "jobId") || "—"}</strong>
+              </p>
               {[...active.charges, ...active.pos].map((id) => {
                 const r = state.records.find((x) => x.id === id)!;
                 return (
@@ -1111,11 +1155,17 @@ export default function Page() {
                       {r.source === "qbo" ? "QUICKBOOKS" : "SERVICETITAN"}
                     </span>
                     <strong>
-                      {r.id} <span>{money(r.amount)}</span>
+                      {r.source === "st"
+                        ? "PO " + (r.reference || "number unavailable")
+                        : r.id}{" "}
+                      <span>{money(r.amount)}</span>
                     </strong>
                     <small>
                       {r.date} · {r.account}
                     </small>
+                    {r.source === "st" && (
+                      <small>Internal record ID: {r.id}</small>
+                    )}
                     {r.source === "st" && (
                       <p>
                         PO technician:{" "}
@@ -1243,7 +1293,7 @@ export default function Page() {
               {action === "dismiss" && active.charges.length > 0 && (
                 <label className="field">
                   {state.config.maxGroup === 1
-                    ? "Override PO ID (optional)"
+                    ? "Override internal PO record ID (optional)"
                     : "Override PO IDs (comma separated, optional)"}
                   <input
                     value={manual}

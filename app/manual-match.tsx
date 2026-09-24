@@ -34,7 +34,7 @@ export default function ManualMatch({
     (r) => r.source === "st" && available.has(r.id),
   );
   const matches = (r: State["records"][number], query: string) =>
-    `${r.id} ${r.vendor} ${r.description} ${r.date} ${r.cardUser || ""} ${r.reference}`
+    `${r.id} ${r.vendor} ${r.description} ${r.date} ${r.cardUser || ""} ${r.reference} ${r.customerName || ""} ${r.jobId || ""} ${r.jobNumber || ""}`
       .toLowerCase()
       .includes(query.toLowerCase());
   const total = charges
@@ -52,7 +52,7 @@ export default function ManualMatch({
         <input
           value={poSearch}
           onChange={(e) => setPoSearch(e.target.value)}
-          placeholder="Vendor, PO ID, reference or date"
+          placeholder="Vendor, customer, Job ID, PO ID or date"
         />
       </label>
       <label className="field">
@@ -67,7 +67,12 @@ export default function ManualMatch({
             .filter((r) => r.id === poId || matches(r, poSearch))
             .map((r) => (
               <option key={r.id} value={r.id}>
-                {r.vendor} · {r.id} · {r.date} · {money(r.amount)}
+                {r.vendor} · PO {r.reference || r.id} · {r.date} ·{" "}
+                {money(r.amount)}
+                {r.customerName ? ` · ${r.customerName}` : ""}
+                {r.jobNumber || r.jobId
+                  ? ` · Job ${r.jobNumber || r.jobId}`
+                  : ""}
               </option>
             ))}
         </select>

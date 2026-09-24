@@ -18,6 +18,7 @@ export { getJSON } from "./integration-transport";
 export { encryptToken, decryptToken } from "./token-crypto";
 import { integrationSetup, IntegrationSetupError } from "./integration-setup";
 import { configuredST, ServiceTitanSetupError } from "./servicetitan-settings";
+import { enrichPOCustomers } from "./po-customers";
 import { resolveVendorDescription } from "./vendor-evidence";
 type Fetcher = typeof fetch;
 const sourceId = z
@@ -108,6 +109,7 @@ const stSchema = z.object({
   businessUnitId: sourceId.nullish(),
   summary: z.string().nullish(),
   technicianId: sourceId.nullish(),
+  jobId: sourceId.nullish(),
   typeId: sourceId.nullish(),
   inventoryLocationId: sourceId.nullish(),
 });
@@ -132,6 +134,7 @@ export function mapST(
     account: p.businessUnitId || "",
     createdAt: p.createdOn,
     technicianId: p.technicianId || undefined,
+    ...(p.jobId && p.jobId !== "0" ? { jobId: p.jobId } : {}),
     poTypeId: p.typeId || undefined,
     poStatus: p.status,
     inventoryLocationId: p.inventoryLocationId || undefined,
@@ -240,7 +243,7 @@ export async function readST(
     }),
   );
   const rows = await readSTPages("purchase-orders", token, fetcher);
-  return rows.flatMap((raw) => {
+  const records = rows.flatMap((raw) => {
     const p = stSchema.parse(raw);
     if (
       !p.businessUnitId ||
@@ -252,6 +255,7 @@ export async function readST(
     const mapped = mapST(raw, vendors);
     return mapped ? [mapped] : [];
   });
+  return enrichPOCustomers(records, token, fetcher);
 }
 async function serviceTitanToken(fetcher: Fetcher) {
   const host =

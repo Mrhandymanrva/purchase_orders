@@ -143,7 +143,7 @@ export function reconciliationPDFModel(
           p
             .map(
               (x) =>
-                `${x.reference || x.id}${x.reference && x.reference !== x.id ? `\n${x.id}` : ""}\nPO technician: ${poTechnician(state, x).name}`,
+                `${x.reference || x.id}${x.reference && x.reference !== x.id ? `\n${x.id}` : ""}\nPO technician: ${poTechnician(state, x).name}${x.customerName ? `\nCustomer: ${x.customerName}` : ""}${x.jobNumber ? `\nJob number: ${x.jobNumber}` : ""}${x.jobId ? `\nJob ID: ${x.jobId}` : ""}`,
             )
             .join("\n") || "No linked PO",
         ]),
