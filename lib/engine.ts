@@ -13,10 +13,14 @@ import { vendorDisplay, missingVendorExplanation } from "./vendor-evidence";
 import { descriptionKey, ruleMatchField } from "./vendor-rule";
 export const ENGINE_VERSION = "1.4.1";
 export function decisionFitsPolicy(
-  decision: Pick<Decision, "charges" | "pos">,
+  decision: Pick<Decision, "charges" | "pos" | "matchingMode">,
   policy: Config,
 ) {
   return (
+    (decision.matchingMode === "manual-many-to-one" &&
+      decision.charges.length >= 1 &&
+      decision.charges.length <= 100 &&
+      decision.pos.length === 1) ||
     policy.maxGroup !== 1 ||
     (decision.charges.length <= 1 && decision.pos.length <= 1)
   );

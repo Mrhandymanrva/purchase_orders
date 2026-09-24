@@ -302,3 +302,29 @@ export function reportCSV(
   }
   return "\uFEFF" + rows.map((row) => row.map(cell).join(",")).join("\r\n");
 }
+
+// Totals describe unmatched, unresolved records in the current table scope.
+export function unmatchedTotals(
+  results: Result[],
+  state: State,
+  filter: ReportFilter,
+) {
+  let poCents = 0,
+    chargeCents = 0;
+  for (const result of filterResults(results, state, filter)) {
+    if (
+      result.status === "No PO required" ||
+      result.status === "Dismissed" ||
+      isReconciled(result.status)
+    )
+      continue;
+    if (!result.charges.length)
+      poCents += state.records
+        .filter(
+          (p) => result.pos.includes(p.id) && poInReport(state, p, filter),
+        )
+        .reduce((sum, p) => sum + p.amount, 0);
+    if (!result.pos.length) chargeCents += reportAmount(state, result, filter);
+  }
+  return { poCents, chargeCents, differenceCents: poCents - chargeCents };
+}

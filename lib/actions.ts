@@ -97,6 +97,7 @@ export const actionSchema = z
       action: z.enum(["confirm", "dismiss"]),
       reason: z.string().trim().max(2000).default(""),
       poIds: z.array(z.string().trim().min(1)).max(20).optional(),
+      chargeIds: z.array(z.string().trim().min(1)).min(1).max(100).optional(),
     }),
     z.object({
       type: z.literal("save-spend-categories"),
@@ -402,7 +403,31 @@ export function applyAction(
     const r = results.find((r) => r.id === action.resultId);
     if (!r) throw Error("Result no longer exists");
     const pos = action.poIds ?? r.pos;
-    if (!decisionFitsPolicy({ charges: r.charges, pos }, state.config))
+    const charges = action.chargeIds ?? r.charges;
+    const matchingMode =
+      action.chargeIds || (charges.length > 1 && pos.length === 1)
+        ? ("manual-many-to-one" as const)
+        : undefined;
+    if (action.chargeIds && (action.action !== "confirm" || pos.length !== 1))
+      throw Error("Select one PO and at least one charge to confirm a match");
+    if (
+      new Set(charges).size !== charges.length ||
+      charges.some(
+        (id) => !state.records.some((x) => x.id === id && x.source === "qbo"),
+      )
+    )
+      throw Error("Selection contains an invalid or duplicate charge ID");
+    if (
+      action.chargeIds &&
+      !(
+        r.charges.some((id) => charges.includes(id)) ||
+        r.pos.some((id) => pos.includes(id))
+      )
+    )
+      throw Error(
+        "The match must include a record from the open reconciliation",
+      );
+    if (!decisionFitsPolicy({ charges, pos, matchingMode }, state.config))
       throw Error(
         "One-to-one matching allows at most one purchase and one PO per decision. Select a single PO ID.",
       );
@@ -413,7 +438,7 @@ export function applyAction(
       )
     )
       throw Error("Override contains an invalid or duplicate PO ID");
-    const ids = [...r.charges, ...pos];
+    const ids = [...charges, ...pos];
     const locked = state.decisions.filter(
       (d) =>
         d.resultId !== r.id &&
@@ -427,7 +452,8 @@ export function applyAction(
     )
       throw Error("A record is already reserved by another manual decision");
     const decision = {
-      resultId: JSON.stringify([r.charges.slice().sort(), pos.slice().sort()]),
+      resultId: JSON.stringify([charges.slice().sort(), pos.slice().sort()]),
+      ...(matchingMode ? { matchingMode } : {}),
       fingerprint: fingerprint(state.records, ids),
       action: action.action,
       reason:
@@ -436,7 +462,7 @@ export function applyAction(
           : action.reason,
       actor,
       at: new Date().toISOString(),
-      charges: r.charges,
+      charges,
       pos,
     };
     state.decisions = state.decisions.filter((d) => d.resultId !== r.id);

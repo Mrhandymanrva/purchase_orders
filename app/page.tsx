@@ -25,6 +25,7 @@ import { reconcile, ENGINE_VERSION } from "@/lib/engine";
 import { vendorBasis, importedPayeeName } from "@/lib/vendor-evidence";
 import { statusLabel } from "@/lib/reconciliation-status";
 import {
+  unmatchedTotals,
   chargeInReport,
   ownershipLabel,
   filterResults,
@@ -40,6 +41,8 @@ import {
   poTechnicianLabel,
   reconciliationIndividuals,
 } from "@/lib/po-technician";
+import { previousWeekRange } from "@/lib/date-range";
+import ManualMatch from "./manual-match";
 import CardMappings from "./card-mappings";
 import VendorExclusionRule from "./vendor-exclusion-rule";
 import SpendCategoryPicker from "./spend-category-picker";
@@ -93,6 +96,7 @@ export default function Page() {
     to: dateTo,
   };
   const visible = filterResults(results, state, reportFilter);
+  const unmatched = unmatchedTotals(results, state, reportFilter);
   const scopedRecords = state.records.filter(
     (r) => r.source === "qbo" && chargeInReport(r, reportFilter, state),
   );
@@ -489,7 +493,39 @@ export default function Page() {
                       onChange={(e) => setDateTo(e.target.value)}
                     />
                   </label>
+                  <button
+                    type="button"
+                    title="Previous Sunday–Saturday in Richmond time"
+                    onClick={() => {
+                      const range = previousWeekRange();
+                      setDateFrom(range.from);
+                      setDateTo(range.to);
+                    }}
+                  >
+                    Last week
+                  </button>
                   <span>{visible.length} results</span>
+                </div>
+                <div
+                  className="unmatched-totals"
+                  aria-label="Unmatched totals for current filters"
+                >
+                  <div>
+                    <span>POs without charges</span>
+                    <strong>{money(unmatched.poCents)}</strong>
+                  </div>
+                  <div>
+                    <span>Charges without POs</span>
+                    <strong>{money(unmatched.chargeCents)}</strong>
+                  </div>
+                  <div>
+                    <span>Net difference · POs minus charges</span>
+                    <strong>{money(unmatched.differenceCents)}</strong>
+                  </div>
+                  <p>
+                    Current table filters · Signed amounts · Excludes dismissed
+                    and no-PO-required items
+                  </p>
                 </div>
                 <div className="table-scroll">
                   <table>
@@ -1204,7 +1240,7 @@ export default function Page() {
                   <option value="dismiss">Dismiss exception</option>
                 </select>
               </label>
-              {active.charges.length > 0 && (
+              {action === "dismiss" && active.charges.length > 0 && (
                 <label className="field">
                   {state.config.maxGroup === 1
                     ? "Override PO ID (optional)"
@@ -1230,32 +1266,37 @@ export default function Page() {
                   />
                 </label>
               )}
-              <button
-                className="primary"
-                disabled={
-                  busy || (action === "dismiss" && reason.trim().length < 5)
-                }
-                onClick={async () => {
-                  const saved = await mutate({
-                    type: "decision",
-                    resultId: active.id,
-                    action,
-                    reason: action === "dismiss" ? reason : undefined,
-                    poIds: manual.trim()
-                      ? manual.split(",").map((s) => s.trim())
-                      : undefined,
-                  });
-                  if (saved && action === "confirm") {
-                    setSelected((current) =>
-                      current === active.id ? null : current,
-                    );
-                  }
-                }}
-              >
-                {action === "confirm"
-                  ? "Confirm reconciliation"
-                  : "Save review decision"}
-              </button>
+              {action === "confirm" && (
+                <ManualMatch
+                  key={active.id}
+                  state={state}
+                  results={results}
+                  active={active}
+                  busy={busy}
+                  onSave={mutate}
+                  onApplied={() => setSelected(null)}
+                />
+              )}
+              {action === "dismiss" && (
+                <button
+                  className="primary"
+                  disabled={busy || reason.trim().length < 5}
+                  onClick={async () => {
+                    const saved = await mutate({
+                      type: "decision",
+                      resultId: active.id,
+                      action,
+                      reason: action === "dismiss" ? reason : undefined,
+                      poIds: manual.trim()
+                        ? manual.split(",").map((s) => s.trim())
+                        : undefined,
+                    });
+                    if (saved) setSelected(null);
+                  }}
+                >
+                  Save review decision
+                </button>
+              )}
               {message && message !== "Saved successfully" && (
                 <p className="notice" role="alert">
                   {message}

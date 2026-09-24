@@ -123,6 +123,7 @@ export type Result = {
 };
 export type SpendCategory = { id: string; name: string; active: boolean };
 export type Decision = {
+  matchingMode?: "manual-many-to-one";
   resultId: string;
   fingerprint: string;
   action: "confirm" | "dismiss" | "categorize";
