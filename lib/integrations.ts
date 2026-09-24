@@ -110,6 +110,7 @@ const stSchema = z.object({
   summary: z.string().nullish(),
   technicianId: sourceId.nullish(),
   jobId: sourceId.nullish(),
+  invoiceId: sourceId.nullish(),
   typeId: sourceId.nullish(),
   inventoryLocationId: sourceId.nullish(),
 });
@@ -135,6 +136,7 @@ export function mapST(
     createdAt: p.createdOn,
     technicianId: p.technicianId || undefined,
     ...(p.jobId && p.jobId !== "0" ? { jobId: p.jobId } : {}),
+    ...(p.invoiceId && p.invoiceId !== "0" ? { invoiceId: p.invoiceId } : {}),
     poTypeId: p.typeId || undefined,
     poStatus: p.status,
     inventoryLocationId: p.inventoryLocationId || undefined,

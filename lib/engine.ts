@@ -78,8 +78,14 @@ export function fingerprint(records: RecordItem[], ids: string[]): string {
         // Customer/job context is display metadata, not matching evidence.
         // Adding it to an older snapshot must not invalidate confirmed links.
         ...(() => {
-          const { jobId, jobNumber, customerId, customerName, ...evidence } =
-            recordSchema.parse(r);
+          const {
+            invoiceId,
+            jobId,
+            jobNumber,
+            customerId,
+            customerName,
+            ...evidence
+          } = recordSchema.parse(r);
           return evidence;
         })(),
         cardUser: r.cardUser || "Unassigned",

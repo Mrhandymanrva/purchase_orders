@@ -26,6 +26,7 @@ export const recordSchema = z.object({
   account: z.string().default(""),
   accountId: z.string().optional(),
   technicianId: z.string().optional(),
+  invoiceId: z.string().optional(),
   jobId: z.string().optional(),
   jobNumber: z.string().optional(),
   customerId: z.string().optional(),

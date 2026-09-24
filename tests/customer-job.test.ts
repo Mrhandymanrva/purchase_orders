@@ -1,3 +1,7 @@
+import {
+  serviceTitanJobUrl,
+  serviceTitanPOUrl,
+} from "../lib/service-titan-links";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { enrichPOCustomers } from "../lib/po-customers";
@@ -245,4 +249,47 @@ test("ServiceTitan visible PO and job numbers remain distinct from source IDs", 
     fingerprint([record], [record.id]),
     fingerprint(enriched, [record.id]),
   );
+});
+
+test("record links use source job and invoice IDs, never visible numbers or PO IDs", () => {
+  const state = seed();
+  state.mode = "live";
+  state.serviceTitan!.environment = "production";
+  const record = mapST(
+    {
+      ...raw,
+      id: 321641255,
+      number: "144860-003",
+      jobId: 321508838,
+      invoiceId: 321508843,
+    },
+    new Map([["7", "Vendor"]]),
+  )!;
+  assert.equal(
+    serviceTitanJobUrl(state, record.jobId),
+    "https://go.servicetitan.com/#/Job/Index/321508838",
+  );
+  assert.equal(
+    serviceTitanPOUrl(state, record.invoiceId),
+    "https://go.servicetitan.com/#/EditInvoice/321508843",
+  );
+  const { invoiceId, ...withoutInvoice } = record;
+  assert.equal(
+    fingerprint([record], [record.id]),
+    fingerprint([withoutInvoice], [record.id]),
+  );
+  for (const invalid of [
+    undefined,
+    "0",
+    "ST:321641255",
+    "144860-003",
+    "../other",
+    "https://example.com",
+  ]) {
+    assert.equal(serviceTitanPOUrl(state, invalid), undefined);
+    assert.equal(serviceTitanJobUrl(state, invalid), undefined);
+  }
+  state.serviceTitan!.environment = "integration";
+  assert.equal(serviceTitanJobUrl(state, record.jobId), undefined);
+  assert.equal(serviceTitanPOUrl(seed(), record.invoiceId), undefined);
 });

@@ -42,7 +42,8 @@ import {
   reconciliationIndividuals,
 } from "@/lib/po-technician";
 import { previousWeekRange } from "@/lib/date-range";
-import { jobContext, purchaseOrderLabel } from "@/lib/job-context";
+import { jobContext } from "@/lib/job-context";
+import { JobLinks, POLinks } from "./service-titan-record-links";
 import ManualMatch from "./manual-match";
 import CardMappings from "./card-mappings";
 import VendorExclusionRule from "./vendor-exclusion-rule";
@@ -614,12 +615,7 @@ export default function Page() {
                             {jobContext(state, r, "customerName") || "—"}
                           </td>
                           <td className="po">
-                            {jobContext(state, r, "jobNumber") ||
-                              jobContext(state, r, "jobId") ||
-                              "—"}
-                            {jobContext(state, r, "jobNumber") && (
-                              <small>ID: {jobContext(state, r, "jobId")}</small>
-                            )}
+                            <JobLinks state={state} result={r} />
                           </td>
                           <td>
                             {new Date(r.date + "T12:00:00").toLocaleDateString(
@@ -662,7 +658,7 @@ export default function Page() {
                                 : undefined
                             }
                           >
-                            {purchaseOrderLabel(state, r) || "—"}
+                            <POLinks state={state} result={r} />
                           </td>
                           <td>
                             <button
@@ -1114,9 +1110,7 @@ export default function Page() {
                 <strong>{poTechnicianLabel(state, active)}</strong>
               </p>
               <p>
-                PO number:{" "}
-                {purchaseOrderLabel(state, active) ||
-                  "No linked purchase order"}
+                PO number: <POLinks state={state} result={active} />
               </p>
               {active.pos.length > 0 && (
                 <p className="muted">
@@ -1135,7 +1129,9 @@ export default function Page() {
               <h3>Source records</h3>
               <p>
                 Job number:{" "}
-                <strong>{jobContext(state, active, "jobNumber") || "—"}</strong>
+                <strong>
+                  <JobLinks state={state} result={active} display="number" />
+                </strong>
               </p>
               <p>
                 Customer:{" "}
@@ -1145,7 +1141,9 @@ export default function Page() {
               </p>
               <p>
                 Job ID:{" "}
-                <strong>{jobContext(state, active, "jobId") || "—"}</strong>
+                <strong>
+                  <JobLinks state={state} result={active} display="id" />
+                </strong>
               </p>
               {[...active.charges, ...active.pos].map((id) => {
                 const r = state.records.find((x) => x.id === id)!;

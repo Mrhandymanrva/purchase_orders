@@ -1605,3 +1605,12 @@ footer,
   background: #f5f8f5;
   margin: 12px 0;
 }
+
+.st-record-link {
+  color: #245c45;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.st-record-link:hover {
+  color: #133d2c;
+}
