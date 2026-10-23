@@ -37,7 +37,8 @@ const bill = z
           }),
         }),
       )
-      .length(1),
+      .min(1)
+      .max(25),
   })
   .strict();
 const schema = z
@@ -104,6 +105,12 @@ const schema = z
     }),
     z.object({ action: z.literal("bills"), number: z.string().min(1).max(21) }),
     z.object({ action: z.literal("bill"), id }),
+    z.object({ action: z.literal("purchase"), id }),
+    z.object({
+      action: z.literal("payables"),
+      vendorId: id,
+      date: z.string().date(),
+    }),
     z.object({
       action: z.literal("createVendor"),
       requestId: z.string().uuid(),
@@ -399,7 +406,18 @@ export async function POST(req: Request) {
         `SELECT * FROM Bill WHERE DocNumber = '${quote(input.number)}' MAXRESULTS 1000`,
       );
     else if (input.action === "bill") result = await call("bill/" + input.id);
-    else
+    else if (input.action === "purchase")
+      result = await call("purchase/" + input.id);
+    else if (input.action === "payables") {
+      const where = `VendorRef = '${quote(input.vendorId)}' AND TxnDate >= '${quote(input.date)}'`;
+      const bills = await query(
+        `SELECT * FROM Bill WHERE ${where} MAXRESULTS 1000`,
+      );
+      const purchases = await query(
+        `SELECT * FROM Purchase WHERE ${where} MAXRESULTS 1000`,
+      );
+      result = { bills, purchases };
+    } else
       result = await call(
         (input.action === "createVendor" ? "vendor" : "bill") +
           "?requestid=" +
