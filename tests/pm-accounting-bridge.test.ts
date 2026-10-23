@@ -14,6 +14,10 @@ const requestId = "12345678-1234-4234-8234-123456789012";
 
 type Call = { url: string; method: string; body?: string };
 
+function qboQuery(call: Call) {
+  return new URL(call.url).searchParams.get("query") || "";
+}
+
 function line(amount: number, n = 0) {
   return {
     Amount: amount,
@@ -226,14 +230,16 @@ test("purchase and payables read QuickBooks with GET only", async () => {
       );
       assert.equal(calls.length, 2);
       assertGetOnly(calls);
+      assert.equal(matched.result.truncated, false);
       assert.equal(
-        new URL(calls[0].url).searchParams.get("query"),
-        "SELECT * FROM Bill WHERE VendorRef = '31' AND TxnDate >= '2026-01-15' MAXRESULTS 1000",
+        qboQuery(calls[0]),
+        "SELECT * FROM Bill WHERE VendorRef = '31' AND TxnDate >= '2026-01-15' AND TxnDate <= '2026-05-15' STARTPOSITION 1 MAXRESULTS 1000",
       );
       assert.equal(
-        new URL(calls[1].url).searchParams.get("query"),
-        "SELECT * FROM Purchase WHERE VendorRef = '31' AND TxnDate >= '2026-01-15' MAXRESULTS 1000",
+        qboQuery(calls[1]),
+        "SELECT * FROM Purchase WHERE TxnDate >= '2026-01-15' AND TxnDate <= '2026-05-15' STARTPOSITION 1 MAXRESULTS 1000",
       );
+      assert.equal(qboQuery(calls[1]).includes("VendorRef"), false);
 
       calls.length = 0;
       for (const body of [
@@ -265,6 +271,200 @@ test("purchase and payables read QuickBooks with GET only", async () => {
         const json = await res.json();
         assert.equal(json.uncertain, false);
         assert.equal(json.error, "QuickBooks connection unavailable.");
+      }
+    },
+  );
+});
+
+test("payables matches purchases with no vendor id and filters TotalAmt", async () => {
+  await withBridge(
+    async (url) => {
+      const query = new URL(String(url)).searchParams.get("query") || "";
+      if (query.startsWith("SELECT * FROM Bill"))
+        return Response.json({
+          QueryResponse: {
+            Bill: [
+              { Id: "b-low", TotalAmt: 19.99 },
+              { Id: "b-min", TotalAmt: 20 },
+              { Id: "b-mid", TotalAmt: 26.08 },
+              { Id: "b-max", TotalAmt: 30 },
+              { Id: "b-high", TotalAmt: 30.01 },
+              { Id: "b-blank", PrivateNote: "missing total" },
+            ],
+          },
+        });
+      if (query.startsWith("SELECT * FROM Purchase"))
+        return Response.json({
+          QueryResponse: {
+            Purchase: [
+              {
+                Id: "p-low",
+                TotalAmt: 10,
+                EntityRef: { value: "31", type: "Vendor" },
+              },
+              {
+                Id: "p-hit",
+                TotalAmt: 26.08,
+                EntityRef: { value: "88", type: "Vendor" },
+              },
+              { Id: "p-card", TotalAmt: 26.08 },
+              { Id: "p-high", TotalAmt: 80 },
+            ],
+          },
+        });
+      throw new Error("unexpected QuickBooks call " + query);
+    },
+    async (request, calls) => {
+      const res = await request({
+        action: "payables",
+        from: "2026-10-01",
+        to: "2026-10-31",
+        minAmount: 20,
+        maxAmount: 30,
+      });
+      assert.equal(res.status, 200);
+      assert.equal(calls.length, 2);
+      assertGetOnly(calls);
+      assert.equal(qboQuery(calls[0]).includes("VendorRef"), false);
+      assert.equal(qboQuery(calls[1]).includes("VendorRef"), false);
+      assert.match(
+        qboQuery(calls[0]),
+        /SELECT \* FROM Bill WHERE TxnDate >= '2026-10-01' AND TxnDate <= '2026-10-31' /,
+      );
+      assert.match(
+        qboQuery(calls[1]),
+        /SELECT \* FROM Purchase WHERE TxnDate >= '2026-10-01' AND TxnDate <= '2026-10-31' /,
+      );
+      const body = await res.json();
+      assert.equal(body.result.truncated, false);
+      assert.deepEqual(
+        body.result.bills.QueryResponse.Bill.map((row: { Id: string }) => row.Id),
+        ["b-min", "b-mid", "b-max"],
+      );
+      assert.deepEqual(
+        body.result.purchases.QueryResponse.Purchase.map(
+          (row: { Id: string }) => row.Id,
+        ),
+        ["p-hit", "p-card"],
+      );
+      assert.deepEqual(body.result.purchases.QueryResponse.Purchase[0].EntityRef, {
+        value: "88",
+        type: "Vendor",
+      });
+      assert.equal(
+        body.result.purchases.QueryResponse.Purchase[1].EntityRef,
+        undefined,
+      );
+
+      calls.length = 0;
+      const withVendor = await request({
+        action: "payables",
+        from: "2026-10-01",
+        to: "2026-10-15",
+        vendorId: "31",
+      });
+      assert.equal(withVendor.status, 200);
+      assertGetOnly(calls);
+      assert.match(qboQuery(calls[0]), /VendorRef = '31'/);
+      assert.equal(qboQuery(calls[1]).includes("VendorRef"), false);
+    },
+  );
+});
+
+test("payables caps the window at 120 days and pages through the row cap", async () => {
+  await withBridge(
+    async (url) => {
+      const query = new URL(String(url)).searchParams.get("query") || "";
+      const start = Number(query.match(/STARTPOSITION (\d+)/)?.[1] || "0");
+      if (query.includes("FROM Bill"))
+        return Response.json({ QueryResponse: { Bill: [] } });
+      if (!query.includes("FROM Purchase"))
+        throw new Error("unexpected QuickBooks call " + query);
+      if (query.includes("VendorRef"))
+        throw new Error("purchase query must not filter VendorRef");
+      if (start > 1001) throw new Error("paged past the cap at " + start);
+      const count = start === 1 || start === 1001 ? 1000 : 0;
+      return Response.json({
+        QueryResponse: {
+          Purchase: Array.from({ length: count }, (_, index) => ({
+            Id: String(start + index),
+            TotalAmt: start === 1 ? 5 : 26.08,
+          })),
+        },
+      });
+    },
+    async (request, calls) => {
+      const open = await request({ action: "payables", from: "2026-01-01" });
+      assert.equal(open.status, 200);
+      assertGetOnly(calls);
+      const purchaseQueries = calls.filter((call) =>
+        qboQuery(call).includes("FROM Purchase"),
+      );
+      assert.equal(purchaseQueries.length, 2);
+      assert.match(
+        qboQuery(purchaseQueries[0]),
+        /TxnDate >= '2026-01-01' AND TxnDate <= '2026-05-01' STARTPOSITION 1 /,
+      );
+      assert.match(qboQuery(purchaseQueries[1]), /STARTPOSITION 1001 /);
+      const openBody = await open.json();
+      assert.equal(openBody.result.truncated, true);
+      assert.equal(openBody.result.purchases.QueryResponse.Purchase.length, 2000);
+
+      calls.length = 0;
+      const bounded = await request({
+        action: "payables",
+        from: "2026-01-01",
+        to: "2026-05-01",
+        minAmount: 26.08,
+        maxAmount: 26.08,
+      });
+      assert.equal(bounded.status, 200);
+      assertGetOnly(calls);
+      const boundedBody = await bounded.json();
+      assert.equal(boundedBody.result.truncated, true);
+      assert.equal(
+        boundedBody.result.purchases.QueryResponse.Purchase.length,
+        1000,
+      );
+      assert.ok(
+        boundedBody.result.purchases.QueryResponse.Purchase.every(
+          (row: { TotalAmt: number }) => row.TotalAmt === 26.08,
+        ),
+      );
+
+      calls.length = 0;
+      for (const body of [
+        { action: "payables", from: "2026-01-01", to: "2026-05-02" },
+        { action: "payables", from: "2026-05-02", to: "2026-01-01" },
+      ]) {
+        const res = await request(body);
+        assert.equal(res.status, 400);
+        assert.equal((await res.json()).error, "Invalid accounting request");
+        assert.equal(calls.length, 0);
+      }
+    },
+  );
+});
+
+test("payables zod rejects a bad request with Invalid accounting request", async () => {
+  await withBridge(
+    async () => {
+      throw new Error("QuickBooks must not be called");
+    },
+    async (request, calls) => {
+      for (const body of [
+        { action: "payables" },
+        { action: "payables", from: "yesterday" },
+        { action: "payables", date: "01-15-2026" },
+        { action: "payables", from: "2026-01-01", vendorId: "abc" },
+        { action: "payables", from: "2026-01-01", minAmount: "20" },
+        { action: "payables", from: "2026-01-01", minAmount: 30, maxAmount: 10 },
+        { action: "payables", to: "2026-02-01" },
+      ]) {
+        const res = await request(body);
+        assert.equal(res.status, 400);
+        assert.equal((await res.json()).error, "Invalid accounting request");
+        assert.equal(calls.length, 0);
       }
     },
   );

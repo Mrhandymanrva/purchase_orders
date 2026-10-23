@@ -41,6 +41,24 @@ const bill = z
       .max(25),
   })
   .strict();
+const payableWindowDays = 120;
+const payablePageSize = 1000;
+const payableRowCap = 2000;
+function payableDay(iso: string, offset = 0) {
+  const [year, month, day] = iso.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day + offset))
+    .toISOString()
+    .slice(0, 10);
+}
+function payableSpan(from: string, to: string) {
+  const [fromYear, fromMonth, fromDay] = from.split("-").map(Number);
+  const [toYear, toMonth, toDay] = to.split("-").map(Number);
+  return Math.round(
+    (Date.UTC(toYear, toMonth - 1, toDay) -
+      Date.UTC(fromYear, fromMonth - 1, fromDay)) /
+      86400000,
+  );
+}
 const schema = z
   .discriminatedUnion("action", [
     z.object({
@@ -108,8 +126,12 @@ const schema = z
     z.object({ action: z.literal("purchase"), id }),
     z.object({
       action: z.literal("payables"),
-      vendorId: id,
-      date: z.string().date(),
+      from: z.string().date().optional(),
+      to: z.string().date().optional(),
+      date: z.string().date().optional(),
+      vendorId: id.optional(),
+      minAmount: z.number().finite().optional(),
+      maxAmount: z.number().finite().optional(),
     }),
     z.object({
       action: z.literal("createVendor"),
@@ -122,7 +144,43 @@ const schema = z
       payload: bill,
     }),
   ])
-  .and(z.object({ expectedRealm: id.optional() }));
+  .and(z.object({ expectedRealm: id.optional() }))
+  .superRefine((value, ctx) => {
+    if (value.action !== "payables") return;
+    const from = value.from || value.date;
+    if (!from) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["from"],
+        message: "from is required",
+      });
+      return;
+    }
+    const to = value.to || payableDay(from, payableWindowDays);
+    const span = payableSpan(from, to);
+    if (span < 0)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["to"],
+        message: "from is after to",
+      });
+    else if (span > payableWindowDays)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["to"],
+        message: "window is longer than 120 days",
+      });
+    if (
+      value.minAmount != null &&
+      value.maxAmount != null &&
+      value.minAmount > value.maxAmount
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["maxAmount"],
+        message: "minAmount is above maxAmount",
+      });
+  });
 export async function POST(req: Request) {
   const headers = { "Cache-Control": "no-store" };
   try {
@@ -409,14 +467,67 @@ export async function POST(req: Request) {
     else if (input.action === "purchase")
       result = await call("purchase/" + input.id);
     else if (input.action === "payables") {
-      const where = `VendorRef = '${quote(input.vendorId)}' AND TxnDate >= '${quote(input.date)}'`;
-      const bills = await query(
-        `SELECT * FROM Bill WHERE ${where} MAXRESULTS 1000`,
-      );
-      const purchases = await query(
-        `SELECT * FROM Purchase WHERE ${where} MAXRESULTS 1000`,
-      );
-      result = { bills, purchases };
+      const from = input.from || input.date || "";
+      const to = input.to || payableDay(from, payableWindowDays);
+      const range = `TxnDate >= '${quote(from)}' AND TxnDate <= '${quote(to)}'`;
+      const billWhere = input.vendorId
+        ? `VendorRef = '${quote(input.vendorId)}' AND ${range}`
+        : range;
+      const withinAmount = (row: any) => {
+        if (input.minAmount == null && input.maxAmount == null) return true;
+        const total = Number(row?.TotalAmt);
+        if (!Number.isFinite(total)) return false;
+        if (input.minAmount != null && total < input.minAmount) return false;
+        if (input.maxAmount != null && total > input.maxAmount) return false;
+        return true;
+      };
+      const collect = async (entity: "Bill" | "Purchase", where: string) => {
+        const rows: any[] = [];
+        let truncated = false;
+        for (
+          let start = 1;
+          rows.length < payableRowCap;
+          start += payablePageSize
+        ) {
+          const size = Math.min(payablePageSize, payableRowCap - rows.length);
+          const answer = await query(
+            `SELECT * FROM ${entity} WHERE ${where} STARTPOSITION ${start} MAXRESULTS ${size}`,
+          );
+          if (answer.fault)
+            return { fault: answer, truncated: false, rows: [] as any[] };
+          const raw = answer.QueryResponse?.[entity] || [];
+          const batch = Array.isArray(raw) ? raw : [raw];
+          rows.push(...batch.slice(0, payableRowCap - rows.length));
+          if (batch.length < size) break;
+          if (rows.length >= payableRowCap) {
+            truncated = true;
+            break;
+          }
+        }
+        return { fault: null, truncated, rows };
+      };
+      const bills = await collect("Bill", billWhere);
+      // Purchases have EntityRef, not VendorRef, and card charges often have no entity.
+      const purchases = await collect("Purchase", range);
+      const packed = (
+        entity: "Bill" | "Purchase",
+        found: Awaited<ReturnType<typeof collect>>,
+      ) => {
+        if (found.fault) return found.fault;
+        const matched = found.rows.filter(withinAmount);
+        return {
+          QueryResponse: {
+            [entity]: matched,
+            startPosition: 1,
+            maxResults: matched.length,
+          },
+        };
+      };
+      result = {
+        bills: packed("Bill", bills),
+        purchases: packed("Purchase", purchases),
+        truncated: bills.truncated || purchases.truncated,
+      };
     } else
       result = await call(
         (input.action === "createVendor" ? "vendor" : "bill") +
